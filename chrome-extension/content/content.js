@@ -60,20 +60,33 @@ function initCommonFlatpickr(el, options = {}) {
     console.warn('[ChatOps Ext] Flatpickr is not available globally.');
     return null;
   }
-  const now = new Date();
-  let defaultHour = now.getHours();
-  let defaultMinute = now.getMinutes();
+  const futureNow = new Date(Date.now() + 1 * 60 * 1000);
+  const userOnOpen = options.onOpen;
+
   return flatpickr(el, {
     enableTime: true,
     dateFormat: "Y-m-d H:i",
     time_24hr: true,
     minuteIncrement: 1,
     disableMobile: true,
-    defaultHour: defaultHour,
-    defaultMinute: defaultMinute,
-    ...options
+    defaultHour: futureNow.getHours(),
+    defaultMinute: futureNow.getMinutes(),
+    ...options,
+    onOpen: function(selectedDates, dateStr, inst) {
+      if (!inst.selectedDates.length && !inst.input.value) {
+        const freshFuture = new Date(Date.now() + 1 * 60 * 1000);
+        inst.set('defaultHour', freshFuture.getHours());
+        inst.set('defaultMinute', freshFuture.getMinutes());
+        if (inst.hourElement) inst.hourElement.value = String(freshFuture.getHours()).padStart(2, '0');
+        if (inst.minuteElement) inst.minuteElement.value = String(freshFuture.getMinutes()).padStart(2, '0');
+      }
+      if (typeof userOnOpen === 'function') {
+        userOnOpen.call(this, selectedDates, dateStr, inst);
+      }
+    }
   });
 }
+
 
 // --- Listen for reminder notifications from the background script ---
 
@@ -588,7 +601,7 @@ async function showReminderBanner(text, taskId, isTask = false, postId = null, t
 /**
  * Displays a toast notification
  */
-function showToast(msg) {
+function showToast(msg, duration = UI_CONFIG.TOAST_DURATION) {
   const existing = document.querySelector('.chatops-toast');
   if (existing) existing.remove();
 
@@ -613,7 +626,7 @@ function showToast(msg) {
     t.style.transform = 'translateX(120%)';
     t.classList.remove('visible');
     setTimeout(() => t.remove(), 300);
-  }, UI_CONFIG.TOAST_DURATION);
+  }, duration);
 }
 
 
@@ -1016,8 +1029,7 @@ function showToast(msg) {
       taskBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const text = textbox ? textbox.value.trim() : '';
-        openQuickNote(null, taskBtn, 'task', text);
+        openQuickNote(null, taskBtn, 'task', '');
       });
     });
   }
@@ -1110,8 +1122,7 @@ function showToast(msg) {
       grBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const text = textbox ? textbox.value.trim() : '';
-        openQuickNote(null, grBtn, 'group_reminder', text);
+        openQuickNote(null, grBtn, 'group_reminder', '');
       });
     });
   }
@@ -3880,7 +3891,6 @@ function showToast(msg) {
       <div class="sp-modal-header" style="border-top-left-radius: 11px; border-top-right-radius: 11px; border-bottom: 1px solid #cbd5e1; display: flex; align-items: center; justify-content: space-between; width: 100%;">
         <div style="display: flex; align-items: center; gap: 6px;">
           <h3 class="sp-modal-title cqn-title" style="margin: 0; font-size: 13px; font-weight: 700; text-transform: uppercase;">${language.modalAddTaskTitle.toUpperCase()}</h3>
-          <span id="cqn-beta-badge" style="display: none; background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; line-height: 1; vertical-align: middle; user-select: none;">BETA</span>
         </div>
         <button id="cqn-close" class="sp-modal-close-btn" title="${language.cancel}">&times;</button>
       </div>
@@ -4096,8 +4106,9 @@ function showToast(msg) {
     function toggleCqnPresetReminderVisibility(isDaily) {
       const orLabel = document.getElementById('cqnOrLabel');
       const customSelect = cqnReminderSelect?.nextElementSibling;
+      const isGroupReminder = quickNotePopover?.dataset?.mode === 'group_reminder';
 
-      if (isDaily) {
+      if (isDaily || isGroupReminder) {
         if (orLabel) orLabel.style.display = 'none';
         if (cqnReminderSelect) cqnReminderSelect.style.display = 'none';
         if (customSelect && customSelect.classList.contains('custom-dropdown-container')) {
@@ -4120,6 +4131,7 @@ function showToast(msg) {
         }
       }
     }
+
 
     const repeatDailyCheckbox = document.getElementById('cqnTaskRemindDaily');
     if (repeatDailyCheckbox && timeInput) {
@@ -4372,25 +4384,99 @@ function showToast(msg) {
   // Resolve current channel info from URL + API (used for group_reminder)
   async function getCurrentChannelInfo() {
     try {
-      const pathParts = window.location.pathname.split('/');
-      const teamName = pathParts[1] || '';
-      const channelSlug = pathParts[2] === 'channels' ? (pathParts[3] || '') : (pathParts[2] || '');
-
-      const teamsResponse = await new Promise(resolve => {
-        chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_MY_TEAMS }, resolve);
+      // Step 1: Get channelId from Redux via inject bridge (most reliable, works for DMs too)
+      let channelId = await new Promise((resolve) => {
+        const timeout = setTimeout(() => resolve(null), 1500);
+        const handler = (e) => {
+          clearTimeout(timeout);
+          window.removeEventListener('chatops-current-channel-response', handler);
+          resolve(e.detail?.channelId || null);
+        };
+        window.addEventListener('chatops-current-channel-response', handler);
+        window.dispatchEvent(new CustomEvent('chatops-current-channel-request'));
       });
-      if (!teamsResponse?.ok || !teamsResponse.teams?.length) return null;
 
-      const team = teamsResponse.teams.find(t => t.name === teamName) || teamsResponse.teams[0];
-      if (!team) return null;
+      // Step 2: Fallback – parse from URL if bridge didn't respond
+      if (!channelId) {
+        const pathParts = window.location.pathname.split('/');
+        const teamName = pathParts[1] || '';
+        const slug = pathParts[2] === 'channels' ? (pathParts[3] || '') : (pathParts[2] || '');
+        if (slug && slug !== 'messages') {
+          // Try to find channel by name in the channels list
+          const teamsResponse = await new Promise(resolve => {
+            chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_MY_TEAMS }, resolve);
+          });
+          if (teamsResponse?.ok && teamsResponse.teams?.length) {
+            const team = teamsResponse.teams.find(t => t.name === teamName) || teamsResponse.teams[0];
+            if (team) {
+              const channelsResponse = await new Promise(resolve => {
+                chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_MY_CHANNELS, teamId: team.id }, resolve);
+              });
+              if (channelsResponse?.ok && channelsResponse.channels) {
+                const ch = channelsResponse.channels.find(c => c.name === slug);
+                if (ch) channelId = ch.id;
+              }
+            }
+          }
+        }
+      }
 
-      const channelsResponse = await new Promise(resolve => {
-        chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_MY_CHANNELS, teamId: team.id }, resolve);
+      if (!channelId) return null;
+
+      // Step 3: Fetch full channel details by ID
+      const channelRes = await new Promise(resolve => {
+        chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_CHANNEL_BY_ID, channelId }, resolve);
       });
-      if (!channelsResponse?.ok || !channelsResponse.channels) return null;
+      if (!channelRes?.ok || !channelRes.channel) return null;
 
-      const channel = channelsResponse.channels.find(c => c.name === channelSlug);
-      return { channel: channel || null, teamId: team.id };
+      const channel = channelRes.channel;
+
+      // Step 4: For DM channels, resolve the other user's display name
+      const isDMChannel = channel.type === 'D' || (channel.name && channel.name.includes('__'));
+      if (isDMChannel && (!channel.display_name || channel.display_name === 'Direct Message' || channel.display_name === channel.name)) {
+        const parts = channel.name.split('__');
+        const currentUserId = myUserId || '';
+        // If myUserId not loaded yet, try to get it first
+        let resolvedCurrentId = currentUserId;
+        if (!resolvedCurrentId) {
+          const profileRes = await new Promise(resolve => {
+            chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_MY_PROFILE }, resolve);
+          });
+          if (profileRes?.ok && profileRes.profile?.id) {
+            resolvedCurrentId = profileRes.profile.id;
+          }
+        }
+        const otherUserId = parts.find(id => id && id !== resolvedCurrentId) || parts.find(id => !!id) || '';
+        if (otherUserId) {
+          try {
+            const userRes = await new Promise(resolve => {
+              chrome.runtime.sendMessage({ type: MESSAGE_TYPES.RESOLVE_USER_ID, userId: otherUserId }, resolve);
+            });
+            if (userRes?.ok && userRes.username) {
+              const fullName = [userRes.first_name, userRes.last_name].filter(Boolean).join(' ').trim();
+              channel.display_name = fullName || userRes.username;
+            }
+          } catch (dmErr) {
+            console.warn('[ChatOps Ext] Could not resolve DM username:', dmErr);
+          }
+        }
+      }
+
+      // Get teamId from URL
+      const pathParts2 = window.location.pathname.split('/');
+      const teamName2 = pathParts2[1] || '';
+      let teamId = null;
+      try {
+        const teamsRes2 = await new Promise(resolve => {
+          chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_MY_TEAMS }, resolve);
+        });
+        if (teamsRes2?.ok && teamsRes2.teams?.length) {
+          const t = teamsRes2.teams.find(t => t.name === teamName2) || teamsRes2.teams[0];
+          teamId = t?.id || null;
+        }
+      } catch (_) {}
+
+      return { channel, teamId };
     } catch (e) {
       console.error('[ChatOps Ext] Failed to resolve current channel:', e);
       return null;
@@ -4871,14 +4957,29 @@ function showToast(msg) {
         const channelInfoBox = document.getElementById('cqn-group-channel-info');
         if (channelInfoBox) channelInfoBox.style.display = 'none';
         popover.querySelector('.cqn-title').textContent = language.quickNoteTitle;
-        const betaBadge = popover.querySelector('#cqn-beta-badge');
-        if (betaBadge) betaBadge.style.display = 'none';
         saveBtn.innerHTML = language.memoAddBtn;
       } else if (popover.dataset.mode === 'group_reminder') {
         if (taskSection) taskSection.style.display = 'block';
         if (noteSection) noteSection.style.display = 'none';
         if (taskCatRow) taskCatRow.style.display = 'none';
         if (hintEl) hintEl.innerHTML = '';
+        
+        // Update label to "Gửi lúc:" for group_reminder
+        const labelTextEl = popover.querySelector('.cqn-reminder-label-text');
+        if (labelTextEl) labelTextEl.textContent = language.scheduleSendLabel || 'Gửi lúc:';
+
+        // Hide OR label and preset select dropdown for group_reminder
+        const cqnOrLabel = popover.querySelector('#cqnOrLabel');
+        if (cqnOrLabel) cqnOrLabel.style.display = 'none';
+        const cqnReminderSelect = popover.querySelector('#cqnReminderSelect');
+        if (cqnReminderSelect) {
+          cqnReminderSelect.style.display = 'none';
+          const customDropdown = cqnReminderSelect.nextElementSibling;
+          if (customDropdown && customDropdown.classList.contains('custom-dropdown-container')) {
+            customDropdown.style.display = 'none';
+          }
+        }
+
         // Show title row — optional for group reminder
         const titleRow = popover.querySelector('.cqn-title-row');
         if (titleRow) titleRow.style.display = 'block';
@@ -4899,15 +5000,22 @@ function showToast(msg) {
         // Update textarea placeholder
         const grTextarea = document.getElementById('cqn-note-text');
         if (grTextarea) grTextarea.placeholder = language.groupReminderTextareaPlaceholder || 'Nhập nội dung... (gõ @ để tag người)';
+        // Prepend automatic message prefix if not already present
+        if (grTextarea) {
+          const autoPrefix = language.autoMessagePrefix || '##### --- Đây là tin nhắn tự động --- #####';
+          if (!grTextarea.value.startsWith(autoPrefix)) {
+            const existingContent = grTextarea.value.trim();
+            grTextarea.value = autoPrefix + '\n' + (existingContent ? existingContent : '');
+          }
+        }
         popover.querySelector('.cqn-title').textContent = language.modalAddGroupReminderTitle || 'Lên lịch gửi tin vào kênh';
-        const betaBadge = popover.querySelector('#cqn-beta-badge');
-        if (betaBadge) betaBadge.style.display = 'inline-block';
         saveBtn.innerHTML = '📢 ' + (language.save || 'Lưu');
         // Setup @mention autocomplete
         if (grTextarea) {
           if (popover._mentionCleanup) popover._mentionCleanup();
           popover._mentionCleanup = setupMentionAutocomplete(grTextarea, () => popover.dataset.teamId || '');
         }
+
         // Resolve current channel info + teamId asynchronously
         popover.dataset.targetChannelId = '';
         popover.dataset.targetChannelName = '';
@@ -4930,6 +5038,23 @@ function showToast(msg) {
         if (taskSection) taskSection.style.display = 'block';
         if (noteSection) noteSection.style.display = 'none';
         if (taskCatRow) taskCatRow.style.display = 'flex';
+
+        // Restore label to "Nhắc:" for task mode
+        const labelTextEl = popover.querySelector('.cqn-reminder-label-text');
+        if (labelTextEl) labelTextEl.textContent = language.taskReminderLabel || 'Nhắc:';
+
+        // Show OR label and preset select dropdown for task mode
+        const cqnOrLabel = popover.querySelector('#cqnOrLabel');
+        if (cqnOrLabel) cqnOrLabel.style.display = 'inline-block';
+        const cqnReminderSelect = popover.querySelector('#cqnReminderSelect');
+        if (cqnReminderSelect) {
+          cqnReminderSelect.style.display = 'inline-block';
+          const customDropdown = cqnReminderSelect.nextElementSibling;
+          if (customDropdown && customDropdown.classList.contains('custom-dropdown-container')) {
+            customDropdown.style.display = 'inline-block';
+          }
+        }
+
         // Restore title row and placeholder for task mode
         const titleRow = popover.querySelector('.cqn-title-row');
         if (titleRow) titleRow.style.display = 'block';
@@ -4942,8 +5067,6 @@ function showToast(msg) {
         const grTextarea = document.getElementById('cqn-note-text');
         if (grTextarea) grTextarea.placeholder = language.taskTextareaPlaceholder;
         popover.querySelector('.cqn-title').textContent = language.quickTaskTitle;
-        const betaBadge = popover.querySelector('#cqn-beta-badge');
-        if (betaBadge) betaBadge.style.display = 'none';
         saveBtn.innerHTML = '🎯 ' + language.taskAddBtn;
         if (hintEl) {
           const res = await chrome.storage.local.get([STORAGE_KEYS.SETTINGS]);
@@ -4951,6 +5074,7 @@ function showToast(msg) {
           hintEl.innerHTML = language.taskReminderHint.replace('{minutes}', settings.snoozeMinutes);
         }
       }
+
 
       const newSaveBtn = saveBtn.cloneNode(true);
       saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
@@ -6482,7 +6606,7 @@ function showToast(msg) {
     } else if (message.type === 'TOGGLE_PWA_SIDE_PANEL') {
       togglePwaSidePanel(message.forceState);
     } else if (message.type === 'SHOW_TOAST') {
-      showToast(message.message);
+      showToast(message.message, message.duration);
     } else if (message.type === 'QUICK_REPLY_QUOTE') {
       // Handle reply-and-quote from context menu
       const selectedText = message.text;

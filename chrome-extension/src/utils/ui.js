@@ -85,17 +85,31 @@ export function initCommonFlatpickr(el, options = {}) {
     console.warn('[ChatOps Ext] Flatpickr is not available globally.');
     return null;
   }
-  const now = new Date();
-  let defaultHour = now.getHours();
-  let defaultMinute = now.getMinutes();
+  const futureNow = new Date(Date.now() + 1 * 60 * 1000);
+  const userOnOpen = options.onOpen;
+
   return flatpickr(el, {
     enableTime: true,
     dateFormat: "Y-m-d H:i",
     time_24hr: true,
     minuteIncrement: 1,
     disableMobile: true,
-    defaultHour: defaultHour,
-    defaultMinute: defaultMinute,
-    ...options
+    defaultHour: futureNow.getHours(),
+    defaultMinute: futureNow.getMinutes(),
+    ...options,
+    onOpen: function(selectedDates, dateStr, inst) {
+      if (!inst.selectedDates.length && !inst.input.value) {
+        const freshFuture = new Date(Date.now() + 1 * 60 * 1000);
+        inst.set('defaultHour', freshFuture.getHours());
+        inst.set('defaultMinute', freshFuture.getMinutes());
+        if (inst.hourElement) inst.hourElement.value = String(freshFuture.getHours()).padStart(2, '0');
+        if (inst.minuteElement) inst.minuteElement.value = String(freshFuture.getMinutes()).padStart(2, '0');
+      }
+      if (typeof userOnOpen === 'function') {
+        userOnOpen.call(this, selectedDates, dateStr, inst);
+      }
+    }
   });
 }
+
+

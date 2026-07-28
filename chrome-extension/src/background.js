@@ -2,7 +2,7 @@
  * Background Service Worker — ChatOps Chrome Extension
  */
 
-import { getConfig, getMyProfile, addPostReaction, deletePostReaction, deletePost, searchUsers, getUsersByIds, getPostReactions, getPostThread, getMyTeams, getMyChannels } from './api/index.js';
+import { getConfig, getMyProfile, addPostReaction, deletePostReaction, deletePost, searchUsers, getUsersByIds, getPostReactions, getPostThread, getMyTeams, getMyChannels, getChannelById } from './api/index.js';
 import { syncCookies, setupCookieSync } from './background/cookie-sync.js';
 import { 
   handleMentionCheck, 
@@ -244,6 +244,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case MESSAGE_TYPES.GET_MY_CHANNELS:
       getMyChannels(message.teamId)
         .then((channels) => sendResponse({ ok: true, channels }))
+        .catch((err) => sendResponse({ ok: false, error: err.message }));
+      return true;
+
+    case MESSAGE_TYPES.GET_CHANNEL_BY_ID:
+      getChannelById(message.channelId)
+        .then((channel) => sendResponse({ ok: true, channel }))
         .catch((err) => sendResponse({ ok: false, error: err.message }));
       return true;
 
@@ -492,7 +498,8 @@ async function handleResolveUserId(userId, sendResponse) {
     }
     const users = await getUsersByIds([userId]);
     if (users && users.length > 0 && users[0].username) {
-      sendResponse({ ok: true, username: users[0].username });
+      const u = users[0];
+      sendResponse({ ok: true, username: u.username, first_name: u.first_name || '', last_name: u.last_name || '' });
     } else {
       sendResponse({ ok: false, error: 'User not found' });
     }

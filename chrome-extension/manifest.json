@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ChatOps++",
-  "version": "3.5.8",
+  "version": "3.5.9",
   "description": "ChatOps++ là tiện ích mở rộng toàn diện giúp tăng 1000% hiệu suất làm việc cho người dùng ChatOps.",
   "permissions": [
     "storage",

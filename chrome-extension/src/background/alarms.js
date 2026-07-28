@@ -108,11 +108,14 @@ export async function handleTaskAlarm(taskId, alarmScheduledTime) {
           await createPost(task.targetChannelId, postMessage);
           
           // Send toast notification message to all open tabs
+          const channelName = task.targetChannelName ? `#${task.targetChannelName}` : '';
+          const toastMsg = (language.groupReminderSentToast || 'Đã tự động gửi tin nhắn đến kênh: {channel}').replace('{channel}', channelName);
           const tabs = await chrome.tabs.query({ url: `${CHATOPS_CONFIG.DEFAULT_URL}/*` });
           for (const tab of tabs) {
             chrome.tabs.sendMessage(tab.id, {
               type: MESSAGE_TYPES.SHOW_TOAST,
-              message: `[ChatOps++] Posted group reminder: ${task.title || 'Task'}`
+              message: toastMsg,
+              duration: 10000
             }).catch(() => {});
           }
         } else {
@@ -125,10 +128,12 @@ export async function handleTaskAlarm(taskId, alarmScheduledTime) {
         for (const tab of tabs) {
           chrome.tabs.sendMessage(tab.id, {
             type: MESSAGE_TYPES.SHOW_TOAST,
-            message: `[ChatOps++] Failed to send group reminder: ${postErr.message}`
+            message: `[ChatOps++] Failed to send group reminder: ${postErr.message}`,
+            duration: 10000
           }).catch(() => {});
         }
       }
+
 
       if (task.repeatDaily) {
         // Reschedule to next daily occurrence

@@ -46,7 +46,7 @@ export function setup(state) {
   const clearDoneBtn = document.getElementById('btnClearAllReminders');
   if (clearDoneBtn) {
     clearDoneBtn.addEventListener('click', async () => {
-      const confirmClear = confirm(language.taskConfirmClear || 'Bạn có chắc chắn muốn xoá tất cả lịch gửi tin đã hoàn thành?');
+      const confirmClear = confirm(language.reminderConfirmClear || 'Bạn có chắc chắn muốn xoá tất cả lịch gửi tin đã hoàn thành?');
       if (confirmClear) {
         const res = await chrome.storage.local.get([STORAGE_KEYS.MEMOS]);
         const memos = (res[STORAGE_KEYS.MEMOS] || []).filter(m => !(m.type === 'group_reminder' && m.done));

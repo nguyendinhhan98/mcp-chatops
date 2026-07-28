@@ -433,6 +433,12 @@ const en = {
   groupRemindersTabLabel: 'Schedule Message',
   quickGroupReminderSaveSuccess: 'Schedule message saved successfully!',
   targetChannelInfo: 'Messages will be sent to channel: {channel}',
+  autoMessagePrefix: '##### --- This is an automated message --- #####',
+  scheduleSendLabel: 'Send at:',
+  groupReminderSentToast: 'Automated message sent to channel: {channel}',
+  noScheduledReminders: 'No scheduled messages pending',
+  noCompletedReminders: 'No completed scheduled messages',
+  reminderConfirmClear: 'Are you sure you want to clear all completed scheduled messages?',
 
 
   quickReplyBtnTooltip: 'Quick Reply (@tag)',
@@ -1249,6 +1255,12 @@ const vi = {
   groupRemindersTabLabel: 'Lên lịch gửi tin',
   quickGroupReminderSaveSuccess: 'Đã lên lịch gửi tin nhắn thành công!',
   targetChannelInfo: 'Tin nhắn sẽ được gửi vào kênh: {channel}',
+  autoMessagePrefix: '##### --- Đây là tin nhắn tự động --- #####',
+  scheduleSendLabel: 'Gửi lúc:',
+  groupReminderSentToast: 'Đã tự động gửi tin nhắn đến kênh: {channel}',
+  noScheduledReminders: 'Không có lịch gửi tin nào đang chờ',
+  noCompletedReminders: 'Chưa có lịch gửi tin nào hoàn thành',
+  reminderConfirmClear: 'Bạn có chắc chắn muốn xoá tất cả lịch gửi tin đã hoàn thành?',
 
 
   quickReplyBtnTooltip: 'Phản hồi nhanh (@)',

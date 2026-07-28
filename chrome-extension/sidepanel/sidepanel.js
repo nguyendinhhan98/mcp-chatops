@@ -1120,13 +1120,17 @@ function setupLanguageToggle() {
       });
     }
 
-    // Re-render mentions dynamically to translate group labels and banner
-    if (typeof reRenderMentions === 'function') {
-      reRenderMentions();
-    }
+    // Re-render tabs dynamically to translate content, empty states and labels
+    if (typeof reRenderMentions === 'function') reRenderMentions();
+    if (typeof loadTasks === 'function') loadTasks();
+    if (typeof loadMemos === 'function') loadMemos();
+    if (typeof loadGroupReminders === 'function') loadGroupReminders();
+    if (typeof renderCategories === 'function') renderCategories();
+    if (typeof renderTabOrderList === 'function') renderTabOrderList();
 
     // 4. Update the flag button display
     btnHeaderLang.textContent = nextLang === 'en' ? 'EN' : 'VI';
+
 
     // 5. Update custom select trigger text if the settings tab is open/rendered
     document.querySelectorAll('.custom-select-wrapper').forEach(wrapper => {

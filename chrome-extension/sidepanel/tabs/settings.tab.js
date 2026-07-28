@@ -245,7 +245,7 @@ const DEFAULT_SETTINGS = {
     images: false,
     reactions: false,
     mentions: true,
-    reminders: false
+    reminders: true
   },
   floatingButtons: {
     quickNote: true,
@@ -1450,7 +1450,7 @@ function setupEventListeners() {
       if (!upBtn && !downBtn) return;
       
       const settings = await getSettings();
-      const defaultOrder = ['tasks', 'memo', 'mentions', 'tools-search', 'tools-images', 'tools-reactions', 'tools'];
+      const defaultOrder = ['tasks', 'memo', 'tools-reminders', 'mentions', 'tools-search', 'tools-images', 'tools-reactions', 'tools'];
       let order = settings.tabOrder || [...defaultOrder];
       const missingKeys = defaultOrder.filter(key => !order.includes(key));
       if (missingKeys.length > 0) {
@@ -1465,11 +1465,13 @@ function setupEventListeners() {
           search: true,
           images: false,
           reactions: false,
-          mentions: true
+          mentions: true,
+          reminders: false
         };
         if (promoteTabs.tasks === undefined) promoteTabs.tasks = true;
         if (promoteTabs.notes === undefined) promoteTabs.notes = true;
         if (promoteTabs.mentions === undefined) promoteTabs.mentions = true;
+        if (promoteTabs.reminders === undefined) promoteTabs.reminders = false;
 
         const toolsVisible = (
           (promoteTabs.tasks === false && (settings.showTabs.tasks !== false)) ||
@@ -1477,7 +1479,8 @@ function setupEventListeners() {
           (!promoteTabs.search && (settings.showTabs.search !== false)) ||
           (!promoteTabs.images && (settings.memeEnabled !== false)) ||
           (!promoteTabs.reactions && (settings.showTabs.reactions !== false)) ||
-          (promoteTabs.mentions === false && (settings.showTabs.missed !== false))
+          (promoteTabs.mentions === false && (settings.showTabs.missed !== false)) ||
+          (!promoteTabs.reminders && (settings.showTabs.reminders !== false))
         );
 
         if (id === 'settings') return false; // settings is in the header, not nav
@@ -1488,6 +1491,7 @@ function setupEventListeners() {
         if (id === 'tools-search') return (settings.showTabs.search !== false) && (promoteTabs.search === true);
         if (id === 'tools-images') return (settings.memeEnabled !== false) && (promoteTabs.images === true);
         if (id === 'tools-reactions') return (settings.showTabs.reactions !== false) && (promoteTabs.reactions === true);
+        if (id === 'tools-reminders') return (settings.showTabs.reminders !== false) && (promoteTabs.reminders === true);
         return false;
       };
 
@@ -3077,7 +3081,7 @@ async function fetchGiphyGifs(query = '') {
 export function applyTabOrderToDOM(order) {
   const container = document.querySelector('.tab-nav');
   if (!container) return;
-  const defaultOrder = ['tasks', 'memo', 'mentions', 'tools-search', 'tools-images', 'tools-reactions', 'tools'];
+  const defaultOrder = ['tasks', 'memo', 'tools-reminders', 'mentions', 'tools-search', 'tools-images', 'tools-reactions', 'tools'];
   let tabIds = order || [...defaultOrder];
   const missingKeys = defaultOrder.filter(key => !tabIds.includes(key));
   if (missingKeys.length > 0) {
@@ -3104,7 +3108,7 @@ export async function renderTabOrderList() {
   if (!container) return;
 
   const settings = await getSettings();
-  const defaultOrder = ['tasks', 'memo', 'mentions', 'tools-search', 'tools-images', 'tools-reactions', 'tools-reminders', 'tools'];
+  const defaultOrder = ['tasks', 'memo', 'tools-reminders', 'mentions', 'tools-search', 'tools-images', 'tools-reactions', 'tools'];
   let order = settings.tabOrder || [...defaultOrder];
   const missingKeys = defaultOrder.filter(key => !order.includes(key));
   if (missingKeys.length > 0) {
