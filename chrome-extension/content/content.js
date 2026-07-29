@@ -1352,26 +1352,10 @@ function showToast(msg, duration = UI_CONFIG.TOAST_DURATION) {
         return;
       }
 
-      let channelId = null;
-      let teamId = null;
-      try {
-        const info = await getCurrentChannelInfo();
-        if (info) {
-          channelId = info.channel?.id;
-          teamId = info.teamId;
-        }
-      } catch (err) {
-        console.warn('[ChatOps++] Failed to resolve channel for Kanban:', err);
-        if (err.message && err.message.includes('Extension context invalidated')) {
-          alert("ChatOps++ đã được cập nhật/nâng cấp mới. Vui lòng tải lại trang Mattermost (F5) để bắt đầu sử dụng!");
-          return;
-        }
-      }
-
       try {
         chrome.runtime.sendMessage({
           type: 'OPEN_KANBAN',
-          payload: { channelId, teamId }
+          payload: {}
         });
       } catch (err) {
         if (err.message && err.message.includes('Extension context invalidated')) {
@@ -6766,208 +6750,129 @@ function showToast(msg, duration = UI_CONFIG.TOAST_DURATION) {
     injectImageButton();
     injectTemplateButton();
     injectQuickNoteButtons();
-    checkAndShowKanbanWelcomeModal();
+    showKanbanIconGuideTooltip();
   });
 
-  async function checkAndShowKanbanWelcomeModal() {
+  async function showKanbanIconGuideTooltip() {
     try {
-      const storage = await chrome.storage.local.get(['kanban_welcome_modal_shown']);
-      if (storage.kanban_welcome_modal_shown) {
-        return; // Already shown
+      const storage = await chrome.storage.local.get(['kanban_icon_guide_shown']);
+      if (storage.kanban_icon_guide_shown) return;
+
+      const btn = document.getElementById('chatops-header-kanban-btn');
+      if (!btn) {
+        // If the header button is not injected yet, retry in 1 second
+        setTimeout(showKanbanIconGuideTooltip, 1000);
+        return;
       }
 
-      // Show welcome modal
-      const isVi = language.app_lang !== 'en';
-      const modalId = 'chatops-kanban-welcome-modal';
-      if (document.getElementById(modalId)) return;
+      // Add pulse highlight animation to the button
+      btn.classList.add('chatops-pulse-highlight');
 
-      const backdrop = document.createElement('div');
-      backdrop.id = modalId;
-      backdrop.style.cssText = `
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 100vw !important;
-        height: 100vh !important;
-        background: rgba(0, 0, 0, 0.6) !important;
-        backdrop-filter: blur(4px) !important;
-        -webkit-backdrop-filter: blur(4px) !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        z-index: 1000000 !important;
-        animation: chatops-fade-in 0.3s ease-out !important;
+      // Create guide tooltip
+      const tooltip = document.createElement('div');
+      tooltip.id = 'chatops-kanban-guide-tooltip';
+      tooltip.style.cssText = `
+        position: absolute !important;
+        background: var(--chatops-accent, #1c58d9) !important;
+        color: #ffffff !important;
+        padding: 14px 18px !important;
+        border-radius: 8px !important;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.2) !important;
+        width: 290px !important;
+        z-index: 1000001 !important;
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-      `;
-
-      const card = document.createElement('div');
-      card.style.cssText = `
-        background: var(--center-channel-bg, #ffffff) !important;
-        color: var(--center-channel-color, #3d3c40) !important;
-        border: 1px solid var(--border-light, #e5e7eb) !important;
-        border-radius: 16px !important;
-        width: 100% !important;
-        max-width: 440px !important;
-        padding: 32px !important;
-        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25) !important;
-        text-align: center !important;
-        position: relative !important;
-        transform: translateY(20px) !important;
-        animation: chatops-slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+        animation: chatops-fade-in 0.25s ease-out !important;
         box-sizing: border-box !important;
       `;
 
-      // Kanban Board Icon
-      const iconContainer = document.createElement('div');
-      iconContainer.style.cssText = `
-        width: 64px !important;
-        height: 64px !important;
-        background: rgba(28, 88, 217, 0.1) !important;
-        color: var(--chatops-accent, #1c58d9) !important;
-        border-radius: 50% !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        margin: 0 auto 20px auto !important;
-      `;
-      iconContainer.innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="32" height="32" style="stroke:currentColor;">
-          <rect x="3" y="3" width="7" height="7" rx="1.5"/>
-          <rect x="14" y="3" width="7" height="7" rx="1.5"/>
-          <rect x="14" y="14" width="7" height="7" rx="1.5"/>
-          <rect x="3" y="14" width="7" height="7" rx="1.5"/>
-        </svg>
+      // Setup position
+      const updatePosition = () => {
+        const currentBtn = document.getElementById('chatops-header-kanban-btn');
+        if (currentBtn) {
+          const rect = currentBtn.getBoundingClientRect();
+          tooltip.style.top = (rect.bottom + window.scrollY + 10) + 'px';
+          tooltip.style.left = (rect.left + window.scrollX + rect.width / 2 - 145) + 'px';
+          
+          // Ensure button continues pulsing even after channel switches and button re-injections
+          if (!currentBtn.classList.contains('chatops-pulse-highlight')) {
+            currentBtn.classList.add('chatops-pulse-highlight');
+          }
+        }
+      };
+      updatePosition();
+      window.addEventListener('resize', updatePosition);
+
+      // Periodically update position (e.g. on channel changes or routing layout shifts)
+      const positionInterval = setInterval(updatePosition, 1000);
+
+      const isVi = language.app_lang !== 'en';
+
+      tooltip.innerHTML = `
+        <div style="position:absolute; top:-6px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-bottom:6px solid var(--chatops-accent, #1c58d9);"></div>
+        <div style="font-size:14px; font-weight:700; margin-bottom:6px; text-align:left;">${isVi ? "✨ Bảng Kanban Cá Nhân" : "✨ Personal Kanban Board"}</div>
+        <div style="font-size:13px; opacity:0.95; line-height:1.45; text-align:left; word-break:break-word;">
+          ${isVi 
+            ? "Click vào biểu tượng này hoặc nhấn tổ hợp phím <strong>Ctrl+Shift+K</strong> để mở bảng Kanban bất kỳ lúc nào!"
+            : "Click this icon or press <strong>Ctrl+Shift+K</strong> to open your Kanban board at any time!"}
+        </div>
+        <button class="chatops-guide-close-btn" style="position:absolute; top:8px; right:8px; background:transparent; border:none; color:white; cursor:pointer; font-size:16px; opacity:0.8; font-weight:bold; padding:0; line-height:1; outline:none;">×</button>
       `;
 
-      const title = document.createElement('h2');
-      title.style.cssText = `
-        font-size: 20px !important;
-        font-weight: 700 !important;
-        margin: 0 0 12px 0 !important;
-        color: var(--center-channel-color, #1f2937) !important;
-      `;
-      title.textContent = isVi ? "✨ Bảng Kanban Cá Nhân Mới!" : "✨ New Kanban Board!";
-
-      const desc = document.createElement('p');
-      desc.style.cssText = `
-        font-size: 13.5px !important;
-        line-height: 1.6 !important;
-        color: var(--center-channel-color-80, #5c5c5c) !important;
-        margin: 0 0 24px 0 !important;
-      `;
-      desc.textContent = isVi 
-        ? "[ChatOps++] Kanban Board đã được làm mới với giao diện đẹp hơn, tối ưu hiệu năng và giảm độ trễ khi thao tác, giúp quản lý công việc và memo nhanh chóng hơn."
-        : "[ChatOps++] Kanban Board has been refreshed with a more beautiful interface, optimized performance, and reduced latency, helping you manage tasks and memos even faster.";
-
-      // Action buttons container
-      const actions = document.createElement('div');
-      actions.style.cssText = `
-        display: flex !important;
-        gap: 12px !important;
-        justify-content: center !important;
-      `;
-
-      const laterBtn = document.createElement('button');
-      laterBtn.style.cssText = `
-        padding: 10px 20px !important;
-        font-size: 13.5px !important;
-        font-weight: 600 !important;
-        color: var(--center-channel-color-80, #5c5c5c) !important;
-        background: transparent !important;
-        border: 1px solid var(--border-light, #d1d5db) !important;
-        border-radius: 8px !important;
-        cursor: pointer !important;
-        transition: all 0.2s ease !important;
-      `;
-      laterBtn.textContent = isVi ? "Để sau" : "Later";
-      laterBtn.addEventListener('mouseover', () => {
-        laterBtn.style.background = 'var(--button-bg-hover, rgba(0,0,0,0.05))';
-      });
-      laterBtn.addEventListener('mouseout', () => {
-        laterBtn.style.background = 'transparent';
-      });
-
-      const startBtn = document.createElement('button');
-      startBtn.style.cssText = `
-        padding: 10px 24px !important;
-        font-size: 13.5px !important;
-        font-weight: 600 !important;
-        color: #ffffff !important;
-        background: var(--chatops-accent, #1c58d9) !important;
-        border: none !important;
-        border-radius: 8px !important;
-        cursor: pointer !important;
-        box-shadow: 0 4px 12px rgba(28, 88, 217, 0.2) !important;
-        transition: all 0.2s ease !important;
-      `;
-      startBtn.textContent = isVi ? "Khám phá ngay 🚀" : "Explore Now 🚀";
-      startBtn.addEventListener('mouseover', () => {
-        startBtn.style.transform = 'translateY(-1px)';
-        startBtn.style.boxShadow = '0 6px 16px rgba(28, 88, 217, 0.3)';
-      });
-      startBtn.addEventListener('mouseout', () => {
-        startBtn.style.transform = 'none';
-        startBtn.style.boxShadow = '0 4px 12px rgba(28, 88, 217, 0.2)';
-      });
-
-      const dismissAction = async () => {
-        await chrome.storage.local.set({ kanban_welcome_modal_shown: true });
-        backdrop.style.opacity = '0';
-        card.style.transform = 'translateY(30px)';
-        setTimeout(() => backdrop.remove(), 300);
+      const dismissGuide = async (permanent = false) => {
+        if (permanent) {
+          await chrome.storage.local.set({ 
+            kanban_welcome_modal_shown: true, // Mark welcome modal as shown too so it never tries to show
+            kanban_icon_guide_shown: true 
+          });
+        }
+        clearInterval(positionInterval);
+        const currentBtn = document.getElementById('chatops-header-kanban-btn');
+        if (currentBtn) {
+          currentBtn.classList.remove('chatops-pulse-highlight');
+        }
+        window.removeEventListener('resize', updatePosition);
+        document.removeEventListener('click', headerBtnClickListener);
+        tooltip.remove();
       };
 
-      laterBtn.addEventListener('click', dismissAction);
-      startBtn.addEventListener('click', async () => {
-        // Resolve current channel info and open Kanban Board
-        let channelId = null;
-        let teamId = null;
-        try {
-          const info = await getCurrentChannelInfo();
-          if (info) {
-            channelId = info.channel?.id;
-            teamId = info.teamId;
-          }
-        } catch (err) {
-          console.warn('[ChatOps++] Failed to resolve channel for Kanban:', err);
-        }
-        chrome.runtime.sendMessage({
-          type: 'OPEN_KANBAN',
-          payload: { channelId, teamId }
-        });
-        await dismissAction();
+      // Dismiss permanently only when click close (x) button
+      tooltip.querySelector('.chatops-guide-close-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        dismissGuide(true);
       });
 
-      actions.appendChild(laterBtn);
-      actions.appendChild(startBtn);
+      // Event delegation to catch Kanban button click and temporarily dismiss
+      const headerBtnClickListener = (e) => {
+        if (e.target.closest('#chatops-header-kanban-btn')) {
+          dismissGuide(false);
+        }
+      };
+      document.addEventListener('click', headerBtnClickListener);
 
-      card.appendChild(iconContainer);
-      card.appendChild(title);
-      card.appendChild(desc);
-      card.appendChild(actions);
-      backdrop.appendChild(card);
+      document.body.appendChild(tooltip);
 
-      // Inject custom keyframe styles if not present
-      let animationsStyle = document.getElementById('chatops-welcome-animations');
-      if (!animationsStyle) {
-        animationsStyle = document.createElement('style');
-        animationsStyle.id = 'chatops-welcome-animations';
-        animationsStyle.textContent = `
-          @keyframes chatops-fade-in {
-            from { opacity: 0; }
-            to { opacity: 1; }
+      // Inject custom keyframes for the pulsing highlight
+      let pulseStyle = document.getElementById('chatops-pulse-style');
+      if (!pulseStyle) {
+        pulseStyle = document.createElement('style');
+        pulseStyle.id = 'chatops-pulse-style';
+        pulseStyle.textContent = `
+          @keyframes chatops-pulse-highlight-ani {
+            0% { box-shadow: 0 0 0 0 rgba(28, 88, 217, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(28, 88, 217, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(28, 88, 217, 0); }
           }
-          @keyframes chatops-slide-up {
-            from { transform: translateY(30px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
+          .chatops-pulse-highlight {
+            animation: chatops-pulse-highlight-ani 1.8s infinite !important;
+            outline: none !important;
+            border-radius: 4px !important;
           }
         `;
-        document.head.appendChild(animationsStyle);
+        document.head.appendChild(pulseStyle);
       }
 
-      document.body.appendChild(backdrop);
     } catch (err) {
-      console.error('[ChatOps Ext] Error showing welcome modal:', err);
+      console.error('[ChatOps Ext] Error showing guide tooltip:', err);
     }
   }
 

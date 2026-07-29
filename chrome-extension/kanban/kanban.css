@@ -877,6 +877,9 @@ html, body {
   text-align: center;
 }
 .column-empty svg { width: 32px; height: 32px; opacity: 0.3; }
+.kanban-column-body:has(.drag-placeholder) .column-empty {
+  display: none !important;
+}
 
 /* ─── Add Lane Column ─────────────────────────────────────────────────────── */
 .add-lane-col {

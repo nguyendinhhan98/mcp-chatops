@@ -129,15 +129,22 @@ function showToast(message, type = 'info') {
 
 // ─── Initialization ──────────────────────────────────────────────────────────
 
-document.addEventListener('DOMContentLoaded', async () => {
+async function startApp() {
   renderSkeleton();
   try {
     await initApp();
+    setTimeout(checkAndShowSelectorGuide, 500);
   } catch (err) {
     console.error('[Kanban] Init error:', err);
     showError(err.message);
   }
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', startApp);
+} else {
+  startApp();
+}
 
 async function initApp() {
   const [profile, teamsData] = await Promise.all([
@@ -210,8 +217,12 @@ async function loadBoards() {
     state.boards = (channels || []).filter(c => c.type === 'O' || c.type === 'P').map(c => ({
       id: c.id,
       title: c.display_name || c.name,
-      name: c.name
+      name: c.name,
+      creatorId: c.creator_id
     }));
+
+    // Resolve user details of the board creators
+    await resolveBoardCreators();
 
     if (!state.boards.length) {
       showNoBoardsState();
@@ -233,6 +244,25 @@ async function loadBoards() {
   } catch (err) {
     console.error('[Kanban] Load boards error:', err);
     showError(err.message);
+  }
+}
+
+async function resolveBoardCreators() {
+  const creatorIds = Array.from(new Set(state.boards.map(b => b.creatorId).filter(Boolean)));
+  if (creatorIds.length === 0) return;
+
+  // Filter out IDs that we already have in state.userMap
+  const missingIds = creatorIds.filter(id => !state.userMap[id]);
+  if (missingIds.length === 0) return;
+
+  try {
+    const users = await getUsersByIds(missingIds).catch(() => []);
+    (users || []).forEach(u => {
+      state.userMap[u.id] = u;
+      state.userMap[u.username] = u;
+    });
+  } catch (err) {
+    console.warn('[Kanban] Failed to resolve board creators:', err);
   }
 }
 
@@ -760,10 +790,31 @@ function bindCardEvents() {
 
 function updateColumnCounts() {
   state.lanes.forEach(lane => {
-    const el = document.querySelector(`[data-lane-count="${lane.id}"]`);
-    if (!el) return;
-    const count = document.querySelectorAll(`.kanban-column-body[data-lane-id="${lane.id}"] .kanban-card`).length;
-    el.textContent = count;
+    const countEl = document.querySelector(`[data-lane-count="${lane.id}"]`);
+    const colBody = document.querySelector(`.kanban-column-body[data-lane-id="${lane.id}"]`);
+    if (!colBody) return;
+
+    // Select all cards excluding ghosts/placeholders
+    const cards = colBody.querySelectorAll('.kanban-card:not(.drag-ghost)');
+    const count = cards.length;
+    if (countEl) countEl.textContent = count;
+
+    const emptyEl = colBody.querySelector('.column-empty');
+    if (count === 0) {
+      if (!emptyEl) {
+        const div = document.createElement('div');
+        div.className = 'column-empty';
+        div.innerHTML = `
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 12h6m-3-3v6"/></svg>
+          <span>Không có card</span>
+        `;
+        colBody.appendChild(div);
+      }
+    } else {
+      if (emptyEl) {
+        emptyEl.remove();
+      }
+    }
   });
 }
 
@@ -1824,11 +1875,18 @@ function renderBoardDropdown() {
     return (board.title || '').toLowerCase().includes(query) || (board.name || '').toLowerCase().includes(query);
   });
 
-  list.innerHTML = filteredBoards.map(board => `
-    <div class="board-option ${board.id === state.currentBoard?.id ? 'active' : ''}" data-board-id="${escapeHtml(board.id)}">
-      <span class="board-opt-name">${escapeHtml(board.title || 'Untitled Board')}</span>
-    </div>
-  `).join('');
+  list.innerHTML = filteredBoards.map(board => {
+    const creatorUser = state.userMap[board.creatorId];
+    const creatorName = creatorUser ? (creatorUser.nickname || creatorUser.username) : '';
+    const creatorBadge = creatorName ? `<span class="board-opt-creator" style="font-size:11.5px; color:var(--text-muted); font-weight:normal; opacity:0.85; margin-left:auto;">👤 ${escapeHtml(creatorName)}</span>` : '';
+
+    return `
+      <div class="board-option ${board.id === state.currentBoard?.id ? 'active' : ''}" data-board-id="${escapeHtml(board.id)}">
+        <span class="board-opt-name">${escapeHtml(board.title || 'Untitled Board')}</span>
+        ${creatorBadge}
+      </div>
+    `;
+  }).join('');
 
   list.querySelectorAll('.board-option').forEach(opt => {
     opt.addEventListener('click', async () => {
@@ -2298,6 +2356,87 @@ async function setupHeaderActions() {
       window.open(url, '_blank');
     });
   }
+}
+
+function checkAndShowSelectorGuide() {
+  console.log('[Kanban Guide] Checking selector guide. Guided flag:', localStorage.getItem('kanban_selectors_guided'));
+  if (localStorage.getItem('kanban_selectors_guided') === 'true') return;
+
+  const target = $('#boardSelector');
+  const boardBtn = $('#boardSelectorBtn');
+  const workspaceBtn = $('#workspaceSelectorBtn');
+  console.log('[Kanban Guide] Target elements found:', !!target, !!boardBtn, !!workspaceBtn);
+  if (!target || !boardBtn) return;
+
+  // Add pulse animation to the button
+  boardBtn.classList.add('kb-pulse-highlight');
+
+  // Inject pulse animation CSS if not present
+  let styleEl = document.getElementById('kb-pulse-style');
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = 'kb-pulse-style';
+    styleEl.textContent = `
+      @keyframes kb-pulse-highlight-ani {
+        0% { box-shadow: 0 0 0 0 var(--accent, rgba(28, 88, 217, 0.6)); }
+        70% { box-shadow: 0 0 0 10px rgba(28, 88, 217, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(28, 88, 217, 0); }
+      }
+      .kb-pulse-highlight {
+        animation: kb-pulse-highlight-ani 1.8s infinite !important;
+        border-color: var(--accent) !important;
+      }
+    `;
+    document.head.appendChild(styleEl);
+  }
+
+  const guide = document.createElement('div');
+  guide.id = 'kanbanSelectorGuide';
+  guide.style.cssText = `
+    position: absolute;
+    background: var(--accent);
+    color: #ffffff;
+    padding: 14px 18px;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    z-index: 9999;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.5;
+    width: 320px;
+    text-align: center;
+    animation: modalIn 0.25s ease;
+    box-sizing: border-box;
+  `;
+
+  const rect = target.getBoundingClientRect();
+  guide.style.top = (rect.bottom + window.scrollY + 12) + 'px';
+  guide.style.left = (rect.left + window.scrollX + rect.width / 2 - 160) + 'px';
+
+  guide.innerHTML = `
+    <div style="position:absolute; top:-6px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-bottom:6px solid var(--accent);"></div>
+    <div style="font-weight:bold; font-size:14px; margin-bottom:6px;">💡 Chọn Kênh Kanban</div>
+    <div style="margin-bottom:12px; opacity:0.95;">Vui lòng chọn <strong>Channel (Kênh)</strong> tại đây để tải dữ liệu bảng công việc và ghi chú tương ứng!</div>
+    <button id="btnGotItGuide" class="header-btn" style="background:#ffffff !important; color:var(--accent) !important; border:none !important; padding:4px 14px !important; font-size:12px !important; font-weight:600 !important; cursor:pointer !important; height:auto !important; width:auto !important; margin:0 auto !important; display:block !important; border-radius:6px !important; box-shadow:0 2px 4px rgba(0,0,0,0.1) !important;">Đã hiểu</button>
+  `;
+
+  const dismissAll = () => {
+    localStorage.setItem('kanban_selectors_guided', 'true');
+    guide.remove();
+    boardBtn.classList.remove('kb-pulse-highlight');
+    workspaceBtn?.removeEventListener('click', dismissAll);
+    boardBtn?.removeEventListener('click', dismissAll);
+  };
+
+  const btn = guide.querySelector('#btnGotItGuide');
+  if (btn) {
+    btn.addEventListener('click', dismissAll);
+  }
+
+  workspaceBtn?.addEventListener('click', dismissAll);
+  boardBtn?.addEventListener('click', dismissAll);
+
+  document.body.appendChild(guide);
 }
 
 

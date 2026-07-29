@@ -20,31 +20,16 @@ export class DragDropEngine {
     this.offsetY = 0;
     this.lastOver = null;
 
-    this._bindMouse();
-    this._bindTouch();
-    this._bindKeyboard();
-  }
+    // Pre-bind listener methods to store references for proper removal on destroy
+    this._handleMouseDown = (e) => this._onPointerDown(e, 'mouse');
+    this._handleMouseMove = (e) => this._onPointerMove(e, 'mouse');
+    this._handleMouseUp = (e) => this._onPointerUp(e, 'mouse');
 
-  // ─── Mouse Events ──────────────────────────────────────────────────────────
+    this._handleTouchStart = (e) => this._onPointerDown(e, 'touch');
+    this._handleTouchMove = (e) => this._onPointerMove(e, 'touch');
+    this._handleTouchEnd = (e) => this._onPointerUp(e, 'touch');
 
-  _bindMouse() {
-    document.addEventListener('mousedown', (e) => this._onPointerDown(e, 'mouse'));
-    document.addEventListener('mousemove', (e) => this._onPointerMove(e, 'mouse'));
-    document.addEventListener('mouseup', (e) => this._onPointerUp(e, 'mouse'));
-  }
-
-  // ─── Touch Events ──────────────────────────────────────────────────────────
-
-  _bindTouch() {
-    document.addEventListener('touchstart', (e) => this._onPointerDown(e, 'touch'), { passive: false });
-    document.addEventListener('touchmove', (e) => this._onPointerMove(e, 'touch'), { passive: false });
-    document.addEventListener('touchend', (e) => this._onPointerUp(e, 'touch'));
-  }
-
-  // ─── Keyboard Accessibility ─────────────────────────────────────────────────
-
-  _bindKeyboard() {
-    document.addEventListener('keydown', (e) => {
+    this._handleKeyDown = (e) => {
       if (!e.ctrlKey && !e.metaKey) return;
       const focused = document.activeElement;
       if (!focused || !focused.closest(this.cardSelector)) return;
@@ -62,7 +47,33 @@ export class DragDropEngine {
         e.preventDefault();
         this._moveCardToColumn(card, columns[colIdx - 1]);
       }
-    });
+    };
+
+    this._bindMouse();
+    this._bindTouch();
+    this._bindKeyboard();
+  }
+
+  // ─── Mouse Events ──────────────────────────────────────────────────────────
+
+  _bindMouse() {
+    document.addEventListener('mousedown', this._handleMouseDown);
+    document.addEventListener('mousemove', this._handleMouseMove);
+    document.addEventListener('mouseup', this._handleMouseUp);
+  }
+
+  // ─── Touch Events ──────────────────────────────────────────────────────────
+
+  _bindTouch() {
+    document.addEventListener('touchstart', this._handleTouchStart, { passive: false });
+    document.addEventListener('touchmove', this._handleTouchMove, { passive: false });
+    document.addEventListener('touchend', this._handleTouchEnd);
+  }
+
+  // ─── Keyboard Accessibility ─────────────────────────────────────────────────
+
+  _bindKeyboard() {
+    document.addEventListener('keydown', this._handleKeyDown);
   }
 
   _moveCardToColumn(card, targetColumn) {
@@ -251,8 +262,14 @@ export class DragDropEngine {
   // ─── Destroy ─────────────────────────────────────────────────────────────────
 
   destroy() {
-    document.removeEventListener('mousedown', this._onPointerDown);
-    document.removeEventListener('mousemove', this._onPointerMove);
-    document.removeEventListener('mouseup', this._onPointerUp);
+    document.removeEventListener('mousedown', this._handleMouseDown);
+    document.removeEventListener('mousemove', this._handleMouseMove);
+    document.removeEventListener('mouseup', this._handleMouseUp);
+
+    document.removeEventListener('touchstart', this._handleTouchStart);
+    document.removeEventListener('touchmove', this._handleTouchMove);
+    document.removeEventListener('touchend', this._handleTouchEnd);
+
+    document.removeEventListener('keydown', this._handleKeyDown);
   }
 }
