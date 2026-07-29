@@ -1329,6 +1329,59 @@ function showToast(msg, duration = UI_CONFIG.TOAST_DURATION) {
     newWrapper.id = 'chatops-header-buttons-wrapper';
     newWrapper.className = 'chatops-header-buttons-wrapper';
 
+    const kanbanBtn = document.createElement('button');
+    kanbanBtn.id = 'chatops-header-kanban-btn';
+    kanbanBtn.className = 'chatops-header-icon-btn';
+    kanbanBtn.title = language.headerKanbanTooltip || 'Mở Kanban Board (Ctrl+Shift+K)';
+    kanbanBtn.innerHTML = `
+      <span class="chatops-header-emoji" style="color: inherit; opacity: 0.85;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16" style="display:block; width:16px; height:16px;">
+          <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+          <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+        </svg>
+      </span>
+    `;
+    kanbanBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!chrome.runtime || !chrome.runtime.id) {
+        alert("ChatOps++ đã được cập nhật/nâng cấp mới. Vui lòng tải lại trang Mattermost (F5) để bắt đầu sử dụng!");
+        return;
+      }
+
+      let channelId = null;
+      let teamId = null;
+      try {
+        const info = await getCurrentChannelInfo();
+        if (info) {
+          channelId = info.channel?.id;
+          teamId = info.teamId;
+        }
+      } catch (err) {
+        console.warn('[ChatOps++] Failed to resolve channel for Kanban:', err);
+        if (err.message && err.message.includes('Extension context invalidated')) {
+          alert("ChatOps++ đã được cập nhật/nâng cấp mới. Vui lòng tải lại trang Mattermost (F5) để bắt đầu sử dụng!");
+          return;
+        }
+      }
+
+      try {
+        chrome.runtime.sendMessage({
+          type: 'OPEN_KANBAN',
+          payload: { channelId, teamId }
+        });
+      } catch (err) {
+        if (err.message && err.message.includes('Extension context invalidated')) {
+          alert("ChatOps++ đã được cập nhật/nâng cấp mới. Vui lòng tải lại trang Mattermost (F5) để bắt đầu sử dụng!");
+        } else {
+          console.error('[ChatOps++] Failed to send message to open Kanban:', err);
+        }
+      }
+    });
+
     const searchBtn = document.createElement('button');
     searchBtn.id = 'chatops-header-search-btn';
     searchBtn.className = 'chatops-header-icon-btn';
@@ -1351,6 +1404,7 @@ function showToast(msg, duration = UI_CONFIG.TOAST_DURATION) {
       openHeaderModal('mentions');
     });
 
+    newWrapper.appendChild(kanbanBtn);
     newWrapper.appendChild(searchBtn);
     newWrapper.appendChild(mentionsBtn);
 
@@ -1375,6 +1429,9 @@ function showToast(msg, duration = UI_CONFIG.TOAST_DURATION) {
   }
 
   updateHeaderButtonsTranslations = function() {
+    const kanbanBtn = document.getElementById('chatops-header-kanban-btn');
+    if (kanbanBtn) kanbanBtn.title = language.headerKanbanTooltip || 'Mở Kanban Board (Ctrl+Shift+K)';
+
     const searchBtn = document.getElementById('chatops-header-search-btn');
     if (searchBtn) searchBtn.title = language.headerSearchTooltip || 'Advanced Search';
 
@@ -6709,7 +6766,210 @@ function showToast(msg, duration = UI_CONFIG.TOAST_DURATION) {
     injectImageButton();
     injectTemplateButton();
     injectQuickNoteButtons();
+    checkAndShowKanbanWelcomeModal();
   });
+
+  async function checkAndShowKanbanWelcomeModal() {
+    try {
+      const storage = await chrome.storage.local.get(['kanban_welcome_modal_shown']);
+      if (storage.kanban_welcome_modal_shown) {
+        return; // Already shown
+      }
+
+      // Show welcome modal
+      const isVi = language.app_lang !== 'en';
+      const modalId = 'chatops-kanban-welcome-modal';
+      if (document.getElementById(modalId)) return;
+
+      const backdrop = document.createElement('div');
+      backdrop.id = modalId;
+      backdrop.style.cssText = `
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        background: rgba(0, 0, 0, 0.6) !important;
+        backdrop-filter: blur(4px) !important;
+        -webkit-backdrop-filter: blur(4px) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        z-index: 1000000 !important;
+        animation: chatops-fade-in 0.3s ease-out !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+      `;
+
+      const card = document.createElement('div');
+      card.style.cssText = `
+        background: var(--center-channel-bg, #ffffff) !important;
+        color: var(--center-channel-color, #3d3c40) !important;
+        border: 1px solid var(--border-light, #e5e7eb) !important;
+        border-radius: 16px !important;
+        width: 100% !important;
+        max-width: 440px !important;
+        padding: 32px !important;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25) !important;
+        text-align: center !important;
+        position: relative !important;
+        transform: translateY(20px) !important;
+        animation: chatops-slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+        box-sizing: border-box !important;
+      `;
+
+      // Kanban Board Icon
+      const iconContainer = document.createElement('div');
+      iconContainer.style.cssText = `
+        width: 64px !important;
+        height: 64px !important;
+        background: rgba(28, 88, 217, 0.1) !important;
+        color: var(--chatops-accent, #1c58d9) !important;
+        border-radius: 50% !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        margin: 0 auto 20px auto !important;
+      `;
+      iconContainer.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="32" height="32" style="stroke:currentColor;">
+          <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+          <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+        </svg>
+      `;
+
+      const title = document.createElement('h2');
+      title.style.cssText = `
+        font-size: 20px !important;
+        font-weight: 700 !important;
+        margin: 0 0 12px 0 !important;
+        color: var(--center-channel-color, #1f2937) !important;
+      `;
+      title.textContent = isVi ? "✨ Bảng Kanban Cá Nhân Mới!" : "✨ New Kanban Board!";
+
+      const desc = document.createElement('p');
+      desc.style.cssText = `
+        font-size: 13.5px !important;
+        line-height: 1.6 !important;
+        color: var(--center-channel-color-80, #5c5c5c) !important;
+        margin: 0 0 24px 0 !important;
+      `;
+      desc.textContent = isVi 
+        ? "[ChatOps++] Kanban Board đã được làm mới với giao diện đẹp hơn, tối ưu hiệu năng và giảm độ trễ khi thao tác, giúp quản lý công việc và memo nhanh chóng hơn."
+        : "[ChatOps++] Kanban Board has been refreshed with a more beautiful interface, optimized performance, and reduced latency, helping you manage tasks and memos even faster.";
+
+      // Action buttons container
+      const actions = document.createElement('div');
+      actions.style.cssText = `
+        display: flex !important;
+        gap: 12px !important;
+        justify-content: center !important;
+      `;
+
+      const laterBtn = document.createElement('button');
+      laterBtn.style.cssText = `
+        padding: 10px 20px !important;
+        font-size: 13.5px !important;
+        font-weight: 600 !important;
+        color: var(--center-channel-color-80, #5c5c5c) !important;
+        background: transparent !important;
+        border: 1px solid var(--border-light, #d1d5db) !important;
+        border-radius: 8px !important;
+        cursor: pointer !important;
+        transition: all 0.2s ease !important;
+      `;
+      laterBtn.textContent = isVi ? "Để sau" : "Later";
+      laterBtn.addEventListener('mouseover', () => {
+        laterBtn.style.background = 'var(--button-bg-hover, rgba(0,0,0,0.05))';
+      });
+      laterBtn.addEventListener('mouseout', () => {
+        laterBtn.style.background = 'transparent';
+      });
+
+      const startBtn = document.createElement('button');
+      startBtn.style.cssText = `
+        padding: 10px 24px !important;
+        font-size: 13.5px !important;
+        font-weight: 600 !important;
+        color: #ffffff !important;
+        background: var(--chatops-accent, #1c58d9) !important;
+        border: none !important;
+        border-radius: 8px !important;
+        cursor: pointer !important;
+        box-shadow: 0 4px 12px rgba(28, 88, 217, 0.2) !important;
+        transition: all 0.2s ease !important;
+      `;
+      startBtn.textContent = isVi ? "Khám phá ngay 🚀" : "Explore Now 🚀";
+      startBtn.addEventListener('mouseover', () => {
+        startBtn.style.transform = 'translateY(-1px)';
+        startBtn.style.boxShadow = '0 6px 16px rgba(28, 88, 217, 0.3)';
+      });
+      startBtn.addEventListener('mouseout', () => {
+        startBtn.style.transform = 'none';
+        startBtn.style.boxShadow = '0 4px 12px rgba(28, 88, 217, 0.2)';
+      });
+
+      const dismissAction = async () => {
+        await chrome.storage.local.set({ kanban_welcome_modal_shown: true });
+        backdrop.style.opacity = '0';
+        card.style.transform = 'translateY(30px)';
+        setTimeout(() => backdrop.remove(), 300);
+      };
+
+      laterBtn.addEventListener('click', dismissAction);
+      startBtn.addEventListener('click', async () => {
+        // Resolve current channel info and open Kanban Board
+        let channelId = null;
+        let teamId = null;
+        try {
+          const info = await getCurrentChannelInfo();
+          if (info) {
+            channelId = info.channel?.id;
+            teamId = info.teamId;
+          }
+        } catch (err) {
+          console.warn('[ChatOps++] Failed to resolve channel for Kanban:', err);
+        }
+        chrome.runtime.sendMessage({
+          type: 'OPEN_KANBAN',
+          payload: { channelId, teamId }
+        });
+        await dismissAction();
+      });
+
+      actions.appendChild(laterBtn);
+      actions.appendChild(startBtn);
+
+      card.appendChild(iconContainer);
+      card.appendChild(title);
+      card.appendChild(desc);
+      card.appendChild(actions);
+      backdrop.appendChild(card);
+
+      // Inject custom keyframe styles if not present
+      let animationsStyle = document.getElementById('chatops-welcome-animations');
+      if (!animationsStyle) {
+        animationsStyle = document.createElement('style');
+        animationsStyle.id = 'chatops-welcome-animations';
+        animationsStyle.textContent = `
+          @keyframes chatops-fade-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+          @keyframes chatops-slide-up {
+            from { transform: translateY(30px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+          }
+        `;
+        document.head.appendChild(animationsStyle);
+      }
+
+      document.body.appendChild(backdrop);
+    } catch (err) {
+      console.error('[ChatOps Ext] Error showing welcome modal:', err);
+    }
+  }
 
   // --- ChatOps PWA Custom Side Panel Fallback (iframe drawer) ---
   let pwaSidePanelContainer = null;

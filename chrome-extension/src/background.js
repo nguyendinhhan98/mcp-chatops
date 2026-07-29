@@ -69,7 +69,6 @@ chrome.runtime.onInstalled.addListener((details) => {
     periodInMinutes: UI_CONFIG.MENTION_CHECK_INTERVAL_MINUTES,
   });
 
-
   initialize();
 });
 
@@ -105,6 +104,38 @@ initialize();
 chrome.action.onClicked.addListener((tab) => {
   if (tab && tab.id) {
     toggleSidePanel(tab.id);
+  }
+});
+
+/**
+ * Open/focus the Kanban tab
+ */
+async function openKanbanTab(channelId = null, teamId = null) {
+  let kanbanUrl = chrome.runtime.getURL('kanban/index.html');
+  if (channelId && teamId) {
+    kanbanUrl += `?teamId=${encodeURIComponent(teamId)}&channelId=${encodeURIComponent(channelId)}`;
+    await chrome.storage.local.set({
+      kanban_last_board: channelId,
+      kanban_last_team: teamId
+    });
+  }
+
+  const baseKanbanUrl = chrome.runtime.getURL('kanban/index.html');
+  const existing = await chrome.tabs.query({ url: baseKanbanUrl + '*' });
+  if (existing.length > 0) {
+    await chrome.tabs.update(existing[0].id, { url: kanbanUrl, active: true });
+    if (existing[0].windowId) {
+      await chrome.windows.update(existing[0].windowId, { focused: true });
+    }
+  } else {
+    chrome.tabs.create({ url: kanbanUrl });
+  }
+}
+
+// Keyboard shortcut: Ctrl+Shift+K (or Cmd+Shift+K on Mac)
+chrome.commands.onCommand.addListener((command) => {
+  if (command === 'open-kanban') {
+    openKanbanTab();
   }
 });
 
@@ -157,6 +188,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (tabId) toggleSidePanel(tabId);
       sendResponse({ ok: true });
       break;
+
+    case 'OPEN_KANBAN':
+      openKanbanTab(message.payload?.channelId, message.payload?.teamId)
+        .then(() => sendResponse({ ok: true }))
+        .catch(() => sendResponse({ ok: false }));
+      return true; // async
+
 
     case MESSAGE_TYPES.SIDE_PANEL_STATE:
       if (tabId) {
@@ -322,42 +360,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
 
     case MESSAGE_TYPES.CREATE_GOOGLE_MEET: {
-      const mattermostTabId = sender.tab?.id;
-      const textboxId = message.payload?.textboxId;
-      if (!mattermostTabId) {
-        sendResponse({ ok: false, error: 'No sender tab' });
-        break;
-      }
-      chrome.tabs.create({ url: 'https://meet.google.com/new', active: true }, (newTab) => {
-        const newTabId = newTab.id;
-        const listener = (updatedTabId, changeInfo, updatedTab) => {
-          if (updatedTabId === newTabId && changeInfo.url) {
-            const url = changeInfo.url;
-            const match = url.match(/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}/);
-            if (match) {
-              const cleanMeetUrl = 'https://' + match[0];
-              chrome.tabs.sendMessage(mattermostTabId, {
-                type: MESSAGE_TYPES.GOOGLE_MEET_CREATED,
-                payload: {
-                  meetLink: cleanMeetUrl,
-                  textboxId: textboxId
-                }
-              }).catch((err) => {
-                console.warn('[ChatOps Ext] Failed to send meet link to Mattermost tab:', err);
-              });
-              chrome.tabs.onUpdated.removeListener(listener);
-            }
-          }
-        };
-        chrome.tabs.onUpdated.addListener(listener);
-        const removeListenerOnClose = (closedTabId) => {
-          if (closedTabId === newTabId) {
-            chrome.tabs.onUpdated.removeListener(listener);
-            chrome.tabs.onRemoved.removeListener(removeListenerOnClose);
-          }
-        };
-        chrome.tabs.onRemoved.addListener(removeListenerOnClose);
-      });
+      chrome.tabs.create({ url: 'https://meet.google.com/new', active: true });
       sendResponse({ ok: true });
       break;
     }

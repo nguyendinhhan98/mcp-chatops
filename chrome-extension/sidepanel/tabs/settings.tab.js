@@ -1043,9 +1043,10 @@ function setupEventListeners() {
     const chk = document.getElementById(checkboxId);
     if (chk) {
       chk.addEventListener('change', async (e) => {
+        const isChecked = e.target.checked;
         const settings = await getSettings();
         if (!settings.floatingButtons) settings.floatingButtons = {};
-        settings.floatingButtons[key] = e.target.checked;
+        settings.floatingButtons[key] = isChecked;
         await updateSettings({ floatingButtons: settings.floatingButtons });
         showAutoSaveFeedback();
 

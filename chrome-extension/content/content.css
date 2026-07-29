@@ -2585,6 +2585,7 @@ body.chatops-pwa-active #root {
   right: auto !important;
   bottom: auto !important;
   transform: none !important;
+  margin-top: 14px !important;
 }
 
 .chatops-iframe-modal-backdrop {
