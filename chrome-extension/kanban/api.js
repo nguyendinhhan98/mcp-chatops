@@ -165,6 +165,24 @@ export async function searchUsers(term, teamId = '', page = 0, perPage = 30) {
   });
 }
 
+export async function getChannelUsers(channelId, page = 0, perPage = 60) {
+  return mmRequest(`/users?in_channel=${channelId}&page=${page}&per_page=${perPage}`);
+}
+
+export async function searchChannelUsers(channelId, term, page = 0, perPage = 30) {
+  if (!term) {
+    return getChannelUsers(channelId, page, perPage);
+  }
+  return mmRequest('/users/search', {
+    method: 'POST',
+    body: JSON.stringify({
+      term,
+      in_channel_id: channelId,
+      allow_inactive: false
+    })
+  });
+}
+
 export async function getUsersByIds(ids) {
   if (!ids || ids.length === 0) return [];
   return mmRequest('/users/ids', {

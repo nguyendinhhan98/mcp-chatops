@@ -9,7 +9,7 @@ import {
   getPluginSettings, getKanbanLanes, getKanbanCardsDirect, updateCardLane,
   getKanbanBoardDetails, getUsersByUsernames, getUserAvatarUrlSync,
   createKanbanCard, moveKanbanCard, deleteKanbanCard, searchUsers, createKanbanLane,
-  updateKanbanLane, deleteKanbanLane
+  updateKanbanLane, deleteKanbanLane, getChannelUsers, searchChannelUsers
 } from './api.js';
 
 import { DragDropEngine } from './dnd.js';
@@ -967,8 +967,23 @@ async function handleCardDrop({ cardId, fromLaneId, toLaneId }) {
 function openCardModal(card = null, defaultLaneId = '') {
   const isEdit = !!card;
   const cardId = card ? (card.id || card._id || '') : '';
-  const title = card ? getCardTitle(card) : '';
-  const description = card ? getCardDescription(card) : '';
+  let title = card ? getCardTitle(card) : '';
+  let description = card ? getCardDescription(card) : '';
+
+  // Resolve draft if exists
+  const draftKey = isEdit ? `kanban_draft_edit_${cardId}` : `kanban_draft_new_${state.currentBoard.id}`;
+  const savedDraft = localStorage.getItem(draftKey);
+  if (savedDraft) {
+    try {
+      const parsed = JSON.parse(savedDraft);
+      if (parsed.title !== undefined) title = parsed.title;
+      if (parsed.description !== undefined) description = parsed.description;
+      showToast('Đã khôi phục bản nháp viết dở', 'info');
+    } catch (e) {
+      console.warn('[Draft] Failed to parse draft:', e);
+    }
+  }
+
   const dueDate = card ? getCardDueDate(card) : '';
   const assigneeIds = card ? getCardAssignees(card) : [];
   const laneId = card ? getCardLaneValue(card) : (defaultLaneId || state.lanes[0]?.id || '');
@@ -1145,22 +1160,100 @@ function openCardModal(card = null, defaultLaneId = '') {
     setTimeout(() => overlay.remove(), 150);
   };
 
+  // Discard draft on Cancel click
+  const discardDraft = () => {
+    localStorage.removeItem(draftKey);
+  };
+  overlay.querySelector('.btn-modal-cancel').addEventListener('click', () => {
+    discardDraft();
+    closeModal();
+  });
+
   overlay.querySelector('#modalCloseBtn').addEventListener('click', closeModal);
-  overlay.querySelector('.btn-modal-cancel').addEventListener('click', closeModal);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
 
-  // Deduplicate allAvailableUsers to prevent double entries in dropdown
-  const allAvailableUsersRaw = state.teamMembers && state.teamMembers.length > 0
-    ? state.teamMembers
-    : Object.values(state.userMap);
-  const uniqueUsersMap = new Map();
-  allAvailableUsersRaw.forEach(u => {
-    if (u && u.id) uniqueUsersMap.set(u.id, u);
-  });
-  const allAvailableUsers = Array.from(uniqueUsersMap.values());
+  // Save draft on user typing
+  const titleInput = overlay.querySelector('#modalTitleInput');
+  const descInput = overlay.querySelector('#modalDescInput');
+  const saveDraft = () => {
+    localStorage.setItem(draftKey, JSON.stringify({
+      title: titleInput.value,
+      description: descInput.value
+    }));
+  };
+  titleInput.addEventListener('input', saveDraft);
+  descInput.addEventListener('input', saveDraft);
+
+  // Dynamic pagination variables for assignee dropdown
+  let channelUsers = [];
+  let currentAssigneePage = 0;
+  let hasMoreAssignees = true;
+  let isLoadingAssignees = false;
+  let currentSearchQuery = '';
 
   const searchInput = overlay.querySelector('#modalAssigneeSearch');
   const dropdown = overlay.querySelector('#modalAssigneeDropdown');
+
+  async function loadAssigneePage(page, append = false, query = '') {
+    console.log('[Assignees] loadAssigneePage called. Page:', page, 'Append:', append, 'Query:', query);
+    if (isLoadingAssignees) return;
+    isLoadingAssignees = true;
+
+    let loader = null;
+    if (append && dropdown) {
+      loader = document.createElement('div');
+      loader.id = 'assigneeDropdownLoading';
+      loader.style.cssText = 'padding:10px; text-align:center; font-size:12px; color:var(--text-muted);';
+      loader.textContent = 'Đang tải thêm...';
+      dropdown.appendChild(loader);
+      dropdown.scrollTop = dropdown.scrollHeight;
+    }
+
+    try {
+      const channelId = state.currentBoard.id;
+      let users = [];
+      if (query) {
+        users = await searchChannelUsers(channelId, query, page, 40);
+      } else {
+        users = await getChannelUsers(channelId, page, 40);
+      }
+      console.log('[Assignees] API returned users count:', users ? users.length : 0);
+
+      if (loader) loader.remove();
+
+      if (!users || users.length < 40) {
+        hasMoreAssignees = false;
+      } else {
+        hasMoreAssignees = true;
+      }
+
+      // Cache user mappings
+      users.forEach(u => {
+        if (u && u.id) {
+          state.userMap[u.id] = u;
+          state.userMap[u.username] = u;
+        }
+      });
+
+      if (append) {
+        const existingIds = new Set(channelUsers.map(u => u.id));
+        const newUsers = users.filter(u => !existingIds.has(u.id));
+        channelUsers = [...channelUsers, ...newUsers];
+      } else {
+        channelUsers = users;
+      }
+
+      renderDropdownList(query);
+    } catch (err) {
+      console.warn('[Assignees] Failed to load channel users:', err);
+      if (loader) loader.remove();
+    } finally {
+      isLoadingAssignees = false;
+    }
+  }
+
+  // Load the first page immediately
+  loadAssigneePage(0, false, '');
 
   // Helper to get unique resolved user objects from selected references (ids or usernames)
   function getUniqueResolvedUsers(refs) {
@@ -1227,22 +1320,20 @@ function openCardModal(card = null, defaultLaneId = '') {
 
   // Render items inside the search dropdown
   function renderDropdownList(filterText = '') {
+    console.log('[Assignees] renderDropdownList called. Filter:', filterText, 'Users count:', channelUsers.length);
     if (!dropdown) return;
-    const searchStr = filterText.toLowerCase().trim();
     
-    const filteredUsers = allAvailableUsers.filter(u => {
-      const uname = String(u.username || '').toLowerCase();
-      const nick = String(u.nickname || '').toLowerCase();
-      const fullName = String((u.first_name || '') + ' ' + (u.last_name || '')).toLowerCase();
-      return uname.includes(searchStr) || nick.includes(searchStr) || fullName.includes(searchStr);
-    });
+    if (channelUsers.length === 0 && isLoadingAssignees) {
+      dropdown.innerHTML = `<div style="padding:10px; text-align:center; font-size:12px; color:var(--text-muted);">Đang tải thành viên...</div>`;
+      return;
+    }
 
-    if (filteredUsers.length === 0) {
+    if (channelUsers.length === 0) {
       dropdown.innerHTML = `<div style="padding:10px; text-align:center; font-size:12px; color:var(--text-muted);">Không tìm thấy thành viên</div>`;
       return;
     }
 
-    dropdown.innerHTML = filteredUsers.map(u => {
+    dropdown.innerHTML = channelUsers.map(u => {
       const uid = u.username || u.id; // User reference
       // Resolve status using username or ID comparison
       const isSelected = selectedAssignees.some(ref => {
@@ -1301,20 +1392,51 @@ function openCardModal(card = null, defaultLaneId = '') {
 
   // Setup search input listeners
   if (searchInput && dropdown) {
+    let searchDebounceTimer = null;
+
     searchInput.addEventListener('focus', () => {
       dropdown.style.display = 'block';
-      renderDropdownList(searchInput.value);
+      if (channelUsers.length === 0) {
+        loadAssigneePage(0, false, currentSearchQuery);
+      } else {
+        renderDropdownList(currentSearchQuery);
+      }
     });
 
     searchInput.addEventListener('input', () => {
-      renderDropdownList(searchInput.value);
+      currentSearchQuery = searchInput.value;
+      currentAssigneePage = 0;
+      hasMoreAssignees = true;
+
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => {
+        loadAssigneePage(0, false, currentSearchQuery);
+      }, 300);
     });
+
+    // Stop propagation on clicks inside the picker wrapper to prevent click-outside auto-close
+    const pickerWrapper = overlay.querySelector('.assignee-picker-wrapper');
+    if (pickerWrapper) {
+      pickerWrapper.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
+    }
 
     // Close dropdown on click outside
     document.addEventListener('click', function closeAssigneeD(e) {
       const wrapper = overlay.querySelector('.assignee-picker-wrapper');
       if (wrapper && !wrapper.contains(e.target)) {
         dropdown.style.display = 'none';
+      }
+    });
+
+    // Scroll listener for loadmore pagination
+    dropdown.addEventListener('scroll', () => {
+      if (dropdown.scrollTop + dropdown.clientHeight >= dropdown.scrollHeight - 15) {
+        if (hasMoreAssignees && !isLoadingAssignees) {
+          currentAssigneePage++;
+          loadAssigneePage(currentAssigneePage, true, currentSearchQuery);
+        }
       }
     });
   }
@@ -1324,7 +1446,7 @@ function openCardModal(card = null, defaultLaneId = '') {
 
   // Toggle description view and edit states
   const descDisplay = overlay.querySelector('#modalDescDisplay');
-  const descInput = overlay.querySelector('#modalDescInput');
+  // descInput is already declared above
   const btnEditDesc = overlay.querySelector('#btnEditDesc');
   const btnExpandDesc = overlay.querySelector('#btnExpandDesc');
 
@@ -1538,6 +1660,7 @@ function openCardModal(card = null, defaultLaneId = '') {
         try {
           const channelId = state.currentBoard.id;
           await deleteKanbanCard(channelId, laneId, cardId);
+          localStorage.removeItem(draftKey);
           state.cards = state.cards.filter(c => (c.id || c._id) !== cardId);
           renderBoard();
           showToast('Đã xóa card', 'success');
@@ -1616,6 +1739,7 @@ function openCardModal(card = null, defaultLaneId = '') {
         showToast('Đã tạo card mới thành công', 'success');
       }
 
+      localStorage.removeItem(draftKey);
       closeModal();
       await resolveUsers();
       renderBoard();
