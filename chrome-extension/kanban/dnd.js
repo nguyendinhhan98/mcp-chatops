@@ -106,11 +106,13 @@ export class DragDropEngine {
   }
 
   _startDrag(card, point) {
-    if (this.onDragStart) this.onDragStart(card);
-
     // Create ghost element
     this.ghost = card.cloneNode(true);
+    this.ghost.classList.remove('dragging');
     this.ghost.classList.add('drag-ghost');
+
+    // Trigger drag start on the original card (which hides it)
+    if (this.onDragStart) this.onDragStart(card);
     this.ghost.style.cssText = `
       position: fixed;
       width: ${card.offsetWidth}px;
@@ -118,10 +120,10 @@ export class DragDropEngine {
       top: ${point.clientY - this.offsetY}px;
       z-index: 9999;
       pointer-events: none;
-      opacity: 0.85;
-      transform: rotate(2deg) scale(1.03);
-      transition: transform 0.1s ease, box-shadow 0.1s ease;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 2px rgba(124,58,237,0.6);
+      opacity: 0.95;
+      transform: rotate(1.5deg) scale(1.02);
+      transition: transform 0.1s ease;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
     `;
     document.body.appendChild(this.ghost);
 

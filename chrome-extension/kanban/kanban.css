@@ -730,7 +730,10 @@ html, body {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
-.kanban-card.dragging { opacity: 0.3; }
+.kanban-card.dragging {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
 
 .card-label-strip {
   height: 3px;
