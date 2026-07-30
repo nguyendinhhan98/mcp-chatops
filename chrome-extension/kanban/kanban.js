@@ -9,12 +9,17 @@ import {
   getPluginSettings, getKanbanLanes, getKanbanCardsDirect, updateCardLane,
   getKanbanBoardDetails, getUsersByUsernames, getUserAvatarUrlSync,
   createKanbanCard, moveKanbanCard, deleteKanbanCard, searchUsers, createKanbanLane,
-  updateKanbanLane, deleteKanbanLane, getChannelUsers, searchChannelUsers
+  updateKanbanLane, deleteKanbanLane, getChannelUsers, searchChannelUsers,
+  updateKanbanCard
 } from './api.js';
 
 import { DragDropEngine } from './dnd.js';
 
 // Smart helper functions to extract values from both Focalboard & AgileOS format cards
+const getCardId = (card) => {
+  return card?._id || card?.cardId || card?.card_id || card?.id || '';
+};
+
 const getCardLaneValue = (card) => {
   return card.laneId || card.status || card.fields?.properties?.[state.propertyId] || '';
 };
@@ -213,20 +218,27 @@ async function loadBoards() {
   const teamId = state.currentTeam.id;
   try {
     const channels = await getMyChannels(teamId);
-    // Filter to only public/private channels that can act as boards
+    // Kanban boards are supported only for public/private channels.
     state.boards = (channels || []).filter(c => c.type === 'O' || c.type === 'P').map(c => ({
       id: c.id,
       title: c.display_name || c.name,
       name: c.name,
+      type: c.type,
       creatorId: c.creator_id
     }));
 
-    // Resolve user details of the board creators
-    await resolveBoardCreators();
-
-    // Parse URL channelId parameter
     const urlParams = new URLSearchParams(window.location.search);
     const urlChannelId = urlParams.get('channelId');
+    if (urlChannelId) {
+      const currentChannel = await getChannel(urlChannelId).catch(() => null);
+      if (currentChannel && (currentChannel.type === 'D' || currentChannel.type === 'G')) {
+        showError('Kanban không khả dụng với Direct Message hoặc Group Message. Vui lòng mở Kanban trong một channel công khai hoặc riêng tư.');
+        return;
+      }
+    }
+
+    // Resolve user details of the board creators
+    await resolveBoardCreators();
 
     // If urlChannelId is provided but not in state.boards, query and add it dynamically (e.g. for DM/GM channels)
     if (urlChannelId && !state.boards.find(b => b.id === urlChannelId)) {
@@ -609,7 +621,7 @@ function renderColumn(lane, cards) {
 }
 
 function renderCard(card) {
-  const cardId = card.id || card._id || '';
+  const cardId = getCardId(card);
   const title = getCardTitle(card);
   const description = getCardDescription(card);
   const dueDate = getCardDueDate(card);
@@ -745,7 +757,7 @@ function bindCardEvents() {
     card.addEventListener('click', (e) => {
       if (e.target.closest('.card-action-btn')) return;
       const cardId = card.dataset.cardId;
-      const cardData = state.cards.find(c => c.id === cardId);
+      const cardData = state.cards.find(c => getCardId(c) === cardId);
       if (cardData) openCardModal(cardData);
     });
 
@@ -753,7 +765,7 @@ function bindCardEvents() {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         const cardId = card.dataset.cardId;
-        const cardData = state.cards.find(c => c.id === cardId);
+        const cardData = state.cards.find(c => getCardId(c) === cardId);
         if (cardData) openCardModal(cardData);
       }
     });
@@ -764,7 +776,7 @@ function bindCardEvents() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const cardId = btn.dataset.cardId;
-      const cardData = state.cards.find(c => c.id === cardId);
+      const cardData = state.cards.find(c => getCardId(c) === cardId);
       if (cardData) openCardModal(cardData);
     });
   });
@@ -774,8 +786,8 @@ function bindCardEvents() {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const cardId = btn.dataset.cardId;
-      const cardData = state.cards.find(c => (c.id || c._id) === cardId);
-      const laneId = cardData ? cardData.laneId : '';
+      const cardData = state.cards.find(c => getCardId(c) === cardId);
+      const laneId = cardData ? getCardLaneValue(cardData) : '';
 
       showConfirmDialog(
         'Xóa card?',
@@ -909,11 +921,11 @@ async function doCreateCard(laneId, title, form, footer) {
       title: title,
       description: "",
       ownerOnly: false,
-      creatorEmail: profile.email || "hannd@runsystem.net",
+      creatorEmail: profile.email || '',
       lane_id: laneId,
       sharing_channel_id: null,
       data: {
-        assignUsers: profile.username ? [profile.username] : ["hannd-runsystem.net"],
+        assignUsers: profile.username ? [profile.username] : [],
         tags: []
       }
     };
@@ -949,7 +961,7 @@ async function handleCardDrop({ cardId, fromLaneId, toLaneId }) {
   if (!cardId || fromLaneId === toLaneId) return;
 
   // Optimistic UI update
-  const card = state.cards.find(c => (c.id || c._id) === cardId);
+  const card = state.cards.find(c => getCardId(c) === cardId);
   if (card) {
     card.laneId = toLaneId;
     if (card.fields?.properties && state.propertyId) {
@@ -963,8 +975,8 @@ async function handleCardDrop({ cardId, fromLaneId, toLaneId }) {
     const channelId = state.currentBoard.id;
     const profile = state.profile || {};
     const movePayload = {
-      updaterId: profile.id || 'xtpdp43bmbd5ucmj85uhordbbr',
-      updaterEmail: profile.email || 'hannd@runsystem.net',
+      updaterId: profile.id || '',
+      updaterEmail: profile.email || '',
       sourceLaneId: fromLaneId,
       targetLaneId: toLaneId,
       cardId: cardId,
@@ -990,7 +1002,7 @@ async function handleCardDrop({ cardId, fromLaneId, toLaneId }) {
 
 function openCardModal(card = null, defaultLaneId = '') {
   const isEdit = !!card;
-  const cardId = card ? (card.id || card._id || '') : '';
+  const cardId = card ? getCardId(card) : '';
   let title = card ? getCardTitle(card) : '';
   let description = card ? getCardDescription(card) : '';
 
@@ -1046,7 +1058,7 @@ function openCardModal(card = null, defaultLaneId = '') {
             <div class="modal-section-label" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
               <span>Mô tả</span>
               <div style="display:flex; align-items:center; gap:8px;">
-                <button id="btnEditDesc" class="header-btn" title="Sửa mô tả" style="padding:4px; font-size:11px; height:auto; display:inline-flex; align-items:center; justify-content:center;">
+                <button id="btnEditDesc" class="header-btn" title="Sửa mô tả" style="display:none; padding:4px; font-size:11px; height:auto; align-items:center; justify-content:center;">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="stroke:currentColor;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
               </div>
@@ -1497,10 +1509,11 @@ function openCardModal(card = null, defaultLaneId = '') {
       descEditContainer.style.display = 'flex';
       descEditActions.style.display = 'none';
     } else {
-      descDisplay.style.display = 'block';
-      btnEditDesc.style.display = 'inline-flex';
-      descEditContainer.style.display = 'none';
+      descDisplay.style.display = 'none';
+      btnEditDesc.style.display = 'none';
+      descEditContainer.style.display = 'flex';
       descEditActions.style.display = 'none';
+      descInput.focus();
     }
 
     const enterEditMode = () => {
@@ -1686,16 +1699,28 @@ function openCardModal(card = null, defaultLaneId = '') {
 
     const deadlineISO = inputDueDate ? new Date(inputDueDate).toISOString() : '';
 
-    const payload = {
+    const payload = isEdit ? {
+      id: cardId,
+      title: inputTitle,
+      description: inputDesc,
+      data: {
+        assignUsers: selectedAssignees,
+        tags: card.tags || []
+      },
+      file_ids: card.file_ids || [],
+      is_complete: card.is_complete || false,
+      ownerOnly: card.ownerOnly || false,
+      sharing_channel_id: card.sharing_channel_id || null
+    } : {
       title: inputTitle,
       description: inputDesc,
       ownerOnly: false,
-      creatorEmail: card ? (card.creatorEmail || profile.email) : (profile.email || "hannd@runsystem.net"),
+      creatorEmail: profile.email || '',
       lane_id: selectedLaneId,
       sharing_channel_id: null,
       data: {
-        assignUsers: selectedAssignees.length > 0 ? selectedAssignees : (profile.username ? [profile.username] : ["hannd-runsystem.net"]),
-        tags: card ? (card.tags || []) : []
+        assignUsers: selectedAssignees,
+        tags: []
       }
     };
 
@@ -1703,9 +1728,20 @@ function openCardModal(card = null, defaultLaneId = '') {
       if (isEdit) {
         // PUT request
         await updateKanbanCard(channelId, laneId, cardId, teamId, payload);
-        
+
+        if (selectedLaneId !== laneId) {
+          await moveKanbanCard(channelId, cardId, {
+            updaterId: profile.id || '',
+            updaterEmail: profile.email || '',
+            sourceLaneId: laneId,
+            targetLaneId: selectedLaneId,
+            cardId,
+            position: 0
+          });
+        }
+
         // Update local card state
-        const idx = state.cards.findIndex(c => (c.id || c._id) === cardId);
+        const idx = state.cards.findIndex(c => getCardId(c) === cardId);
         if (idx !== -1) {
           state.cards[idx] = {
             ...state.cards[idx],

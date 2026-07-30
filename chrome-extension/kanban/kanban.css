@@ -838,10 +838,11 @@ input, textarea, select, button {
   display: flex;
   align-items: center;
   gap: 2px;
-  opacity: 0;
+  opacity: 1;
   transition: opacity var(--transition);
 }
-.kanban-card:hover .card-actions { opacity: 1; }
+.kanban-card:hover .card-actions,
+.kanban-card:focus-within .card-actions { opacity: 1; }
 
 .card-action-btn {
   width: 24px; height: 24px;

@@ -1352,7 +1352,12 @@ function showToast(msg, duration = UI_CONFIG.TOAST_DURATION) {
         return;
       }
 
-      openKanbanOverlay();
+      const container = document.getElementById('chatops-kanban-overlay-container');
+      if (container) {
+        closeKanbanOverlay();
+      } else {
+        openKanbanOverlay();
+      }
     });
 
     const searchBtn = document.createElement('button');
@@ -7221,6 +7226,7 @@ function showToast(msg, duration = UI_CONFIG.TOAST_DURATION) {
 
     kanbanOverlayContainer.appendChild(iframe);
     document.body.appendChild(kanbanOverlayContainer);
+    document.getElementById('chatops-header-kanban-btn')?.classList.add('active');
 
     // Watch resize events to keep the left edge perfectly aligned with the sidebar
     window.addEventListener('resize', handleOverlayResize);
@@ -7237,6 +7243,7 @@ function showToast(msg, duration = UI_CONFIG.TOAST_DURATION) {
     if (!container) return;
 
     window.removeEventListener('resize', handleOverlayResize);
+    document.getElementById('chatops-header-kanban-btn')?.classList.remove('active');
 
     container.classList.remove('kb-overlay-active');
     container.classList.add('kb-overlay-hiding');
