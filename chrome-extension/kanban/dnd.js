@@ -117,6 +117,10 @@ export class DragDropEngine {
   }
 
   _startDrag(card, point) {
+    // Read dimensions BEFORE adding any classes or changing display styles
+    const cardHeight = card.offsetHeight;
+    const cardWidth = card.offsetWidth;
+
     // Create ghost element
     this.ghost = card.cloneNode(true);
     this.ghost.classList.remove('dragging');
@@ -126,7 +130,7 @@ export class DragDropEngine {
     if (this.onDragStart) this.onDragStart(card);
     this.ghost.style.cssText = `
       position: fixed;
-      width: ${card.offsetWidth}px;
+      width: ${cardWidth}px;
       left: ${point.clientX - this.offsetX}px;
       top: ${point.clientY - this.offsetY}px;
       z-index: 9999;
@@ -142,7 +146,9 @@ export class DragDropEngine {
     this.placeholder = document.createElement('div');
     this.placeholder.className = 'drag-placeholder';
     this.placeholder.style.cssText = `
-      height: ${card.offsetHeight}px;
+      height: ${cardHeight}px;
+      min-height: ${cardHeight}px;
+      flex-shrink: 0;
       margin: 4px 0;
       border-radius: 10px;
       border: 2px dashed rgba(124, 58, 237, 0.5);
@@ -247,7 +253,7 @@ export class DragDropEngine {
 
     if (this.onDragEnd) this.onDragEnd(this.dragEl);
 
-    if (this.onDrop && toLaneId && fromLaneId !== toLaneId) {
+    if (this.onDrop && toLaneId) {
       this.onDrop({
         cardId: this.dragEl.dataset.cardId,
         fromLaneId,

@@ -235,7 +235,7 @@ function renderReminderCard(task, now) {
             </span>
           </label>
           ${!task.done ? `
-            <div class="task-update-reminder-wrapper ${task.reminder ? 'has-reminder' : ''} ${isOverdue ? 'overdue' : ''}" style="margin:0; flex-shrink:0; width:110px;">
+            <div class="task-update-reminder-wrapper ${task.reminder ? 'has-reminder' : ''} ${isOverdue ? 'overdue' : ''}" style="margin:0; flex-shrink:0;">
               <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" class="reminder-clock-icon"><path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/></svg>
               <input type="text" class="task-update-reminder" data-id="${task.id}" value="${reminderDisplayVal}" placeholder="${task.repeatDaily ? 'hh:mm' : 'yyyy-mm-dd hh:mm'}" title="${language.changeReminderTime}" />
             </div>

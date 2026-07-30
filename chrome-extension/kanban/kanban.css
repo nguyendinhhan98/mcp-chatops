@@ -77,40 +77,54 @@
 
 /* ─── Light Theme Variables ─── */
 [data-theme="light"] {
-  --bg-app:        #f4f6fa; /* Light gray page background */
-  --bg-col:        #eaecf0; /* Soft gray column background */
-  --bg-card:       #ffffff; /* White cards */
-  --bg-card-hover: #fcfcfd;
+  --bg-app:        #f0f2f5; /* Soft slate gray background to reduce glare */
+  --bg-col:        #e4e7eb; /* Soft distinct column background */
+  --bg-card:       #ffffff; /* Clean card surfaces */
+  --bg-card-hover: #fafafb;
   --bg-input:      #ffffff;
   --bg-modal:      #ffffff;
-  --bg-overlay:    rgba(0, 0, 0, 0.4);
+  --bg-overlay:    rgba(15, 17, 21, 0.4);
 
-  --border:        #d1d5db; /* Thin light-gray border */
-  --border-focus:  rgba(28, 88, 217, 0.6);
-  --border-light:  #e5e7eb;
+  --border:        #d2d6dc; /* Softer, low-contrast border */
+  --border-focus:  rgba(59, 130, 246, 0.5);
+  --border-light:  #e4e7eb;
+  --divider:       #e4e7eb;
 
-  /* Header & toolbar styling for Light Mode (Matches sidebar) */
-  --header-bg:     #1153ab; /* Premium navy */
-  --header-text:   #ffffff; /* Contrast white text */
-  --header-border: rgba(255, 255, 255, 0.15);
+  /* Header & toolbar styling for Light Mode — Soft warm grey integration */
+  --header-bg:     #e4e7eb; /* Soft grey header to match columns and prevent top glare */
+  --header-text:   #2d3748; /* Off-black title text */
+  --header-border: #d2d6dc;
   --header-btn-bg: #ffffff;
-  --header-btn-border: #ffffff;
-  --header-btn-hover-bg: #f3f4f6;
-  --header-text-btn: #1153ab;
-  --nav-bg:        #ffffff; /* Clean white toolbar! */
+  --header-btn-border: #d2d6dc;
+  --header-btn-hover-bg: #f7fafc;
+  --header-text-btn: #4a5568;
+  --nav-bg:        #f0f2f5; /* Blends nicely with app background */
 
-  --text-primary:   #1f2937; /* Dark charcoal primary text */
-  --text-secondary: #4b5563; /* Gray secondary text */
-  --text-muted:     #9ca3af; /* Muted text */
-  --text-link:      #1c58d9;
+  --text-primary:   #2d3748; /* Muted slate primary text (easier on eyes than pure black) */
+  --text-secondary: #4a5568; /* Gray secondary text */
+  --text-muted:     #718096; /* Muted text */
+  --text-link:      #2563eb;
 
-  --shadow-sm:  0 1px 2px rgba(0,0,0,0.05);
-  --shadow-md:  0 4px 8px rgba(0,0,0,0.05);
-  --shadow-lg:  0 8px 16px rgba(0,0,0,0.08);
-  --shadow-xl:  0 12px 30px rgba(0,0,0,0.12);
+  --shadow-sm:  0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 8px rgba(0,0,0,0.04);
+  --shadow-lg:  0 8px 16px rgba(0,0,0,0.06);
+  --shadow-xl:  0 12px 30px rgba(0,0,0,0.08);
 
-  --lane-default:  #6c757d;
-  --lane-blue:     #1c58d9;
+  --lane-default:  #718096;
+  --lane-blue:     #3b82f6;
+
+  --accent:        #3b82f6; /* Softer accent blue */
+  --accent-hover:  #2563eb;
+  --accent-active: #1d4ed8;
+  --accent-2:      #2563eb;
+  --accent-grd:    linear-gradient(135deg, #2563eb, #3b82f6);
+  --accent-glow:   rgba(59, 130, 246, 0.15);
+  --accent-subtle: rgba(59, 130, 246, 0.05);
+
+  --success:  #16a34a;
+  --warning:  #f59e0b;
+  --danger:   #dc2626;
+  --info:     #3b82f6;
 }
 
 /* ─── Reset & Base ────────────────────────────────────────────────────────── */
@@ -118,12 +132,17 @@
 
 html, body {
   height: 100%;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   font-size: 14px;
   background: var(--bg-app);
   color: var(--text-primary);
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+input, textarea, select, button {
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
 }
 
 /* ─── Scrollbars ──────────────────────────────────────────────────────────── */
@@ -744,7 +763,7 @@ html, body {
 
 .card-title {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-primary);
   line-height: 1.45;
   word-break: break-word;
@@ -964,12 +983,70 @@ html, body {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px;
+  padding: 4px 12px;
   border-radius: var(--radius-full);
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   flex-shrink: 0;
   margin-top: 3px;
+  border: 1px solid transparent;
+}
+
+/* Status Badge Themes - No phèn borders, matched status colors */
+.modal-status-badge.lane-propColorDefault {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--lane-default) 12%, transparent);
+  border-color: color-mix(in srgb, var(--lane-default) 25%, transparent);
+}
+.modal-status-badge.lane-propColorGray {
+  color: var(--lane-gray);
+  background: color-mix(in srgb, var(--lane-gray) 12%, transparent);
+  border-color: color-mix(in srgb, var(--lane-gray) 25%, transparent);
+}
+.modal-status-badge.lane-propColorBlue {
+  color: var(--lane-blue);
+  background: color-mix(in srgb, var(--lane-blue) 12%, transparent);
+  border-color: color-mix(in srgb, var(--lane-blue) 25%, transparent);
+}
+.modal-status-badge.lane-propColorRed {
+  color: var(--lane-red);
+  background: color-mix(in srgb, var(--lane-red) 12%, transparent);
+  border-color: color-mix(in srgb, var(--lane-red) 25%, transparent);
+}
+.modal-status-badge.lane-propColorYellow {
+  color: var(--lane-yellow);
+  background: color-mix(in srgb, var(--lane-yellow) 12%, transparent);
+  border-color: color-mix(in srgb, var(--lane-yellow) 25%, transparent);
+}
+.modal-status-badge.lane-propColorOrange {
+  color: var(--lane-orange);
+  background: color-mix(in srgb, var(--lane-orange) 12%, transparent);
+  border-color: color-mix(in srgb, var(--lane-orange) 25%, transparent);
+}
+.modal-status-badge.lane-propColorGreen {
+  color: var(--lane-green);
+  background: color-mix(in srgb, var(--lane-green) 12%, transparent);
+  border-color: color-mix(in srgb, var(--lane-green) 25%, transparent);
+}
+.modal-status-badge.lane-propColorTeal {
+  color: var(--lane-teal);
+  background: color-mix(in srgb, var(--lane-teal) 12%, transparent);
+  border-color: color-mix(in srgb, var(--lane-teal) 25%, transparent);
+}
+.modal-status-badge.lane-propColorPurple {
+  color: var(--lane-purple);
+  background: color-mix(in srgb, var(--lane-purple) 12%, transparent);
+  border-color: color-mix(in srgb, var(--lane-purple) 25%, transparent);
+}
+.modal-status-badge.lane-propColorPink {
+  color: var(--lane-pink);
+  background: color-mix(in srgb, var(--lane-pink) 12%, transparent);
+  border-color: color-mix(in srgb, var(--lane-pink) 25%, transparent);
+}
+.modal-status-badge.lane-propColorSky {
+  color: var(--lane-sky);
+  background: color-mix(in srgb, var(--lane-sky) 12%, transparent);
+  border-color: color-mix(in srgb, var(--lane-sky) 25%, transparent);
 }
 
 .modal-title {
@@ -1034,7 +1111,7 @@ html, body {
 }
 
 .modal-description {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.6;
@@ -1618,7 +1695,7 @@ html, body {
 }
 
 #modalDescInput {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
 }
 
 .board-option {

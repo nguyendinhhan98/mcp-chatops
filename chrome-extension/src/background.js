@@ -133,8 +133,18 @@ async function openKanbanTab(channelId = null, teamId = null) {
 }
 
 // Keyboard shortcut: Ctrl+Shift+K (or Cmd+Shift+K on Mac)
-chrome.commands.onCommand.addListener((command) => {
+chrome.commands.onCommand.addListener(async (command) => {
   if (command === 'open-kanban') {
+    const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const activeTab = tabs[0];
+    if (activeTab && activeTab.id) {
+      try {
+        await chrome.tabs.sendMessage(activeTab.id, { type: 'TOGGLE_KANBAN_OVERLAY' });
+        return;
+      } catch (err) {
+        console.warn('[Background] Failed to toggle overlay via shortcut, falling back to tab:', err);
+      }
+    }
     openKanbanTab();
   }
 });

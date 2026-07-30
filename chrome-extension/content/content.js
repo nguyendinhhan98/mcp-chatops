@@ -1352,18 +1352,7 @@ function showToast(msg, duration = UI_CONFIG.TOAST_DURATION) {
         return;
       }
 
-      try {
-        chrome.runtime.sendMessage({
-          type: 'OPEN_KANBAN',
-          payload: {}
-        });
-      } catch (err) {
-        if (err.message && err.message.includes('Extension context invalidated')) {
-          alert("ChatOps++ đã được cập nhật/nâng cấp mới. Vui lòng tải lại trang Mattermost (F5) để bắt đầu sử dụng!");
-        } else {
-          console.error('[ChatOps++] Failed to send message to open Kanban:', err);
-        }
-      }
+      openKanbanOverlay();
     });
 
     const searchBtn = document.createElement('button');
@@ -6471,6 +6460,7 @@ function showToast(msg, duration = UI_CONFIG.TOAST_DURATION) {
         injectQuickNoteButtons();
         injectHeaderButtons();
       });
+      closeKanbanOverlay();
       mutatedSubtrees.clear();
       emojiButtonMutations = false;
       return;
@@ -6646,6 +6636,13 @@ function showToast(msg, duration = UI_CONFIG.TOAST_DURATION) {
       showHoverDemo(message.active);
     } else if (message.type === 'TOGGLE_PWA_SIDE_PANEL') {
       togglePwaSidePanel(message.forceState);
+    } else if (message.type === 'TOGGLE_KANBAN_OVERLAY') {
+      const container = document.getElementById('chatops-kanban-overlay-container');
+      if (container) {
+        closeKanbanOverlay();
+      } else {
+        openKanbanOverlay();
+      }
     } else if (message.type === 'SHOW_TOAST') {
       showToast(message.message, message.duration);
     } else if (message.type === 'QUICK_REPLY_QUOTE') {
@@ -7057,12 +7054,207 @@ function showToast(msg, duration = UI_CONFIG.TOAST_DURATION) {
     rootEl.style.width = '';
   }
 
-  // Listen for close message from the iframe side panel page
+  // Listen for close message from the iframe side panel page or Kanban overlay
   window.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'CLOSE_PWA_SIDE_PANEL') {
       closePwaSidePanel();
+    } else if (event.data && event.data.type === 'CLOSE_KANBAN_OVERLAY') {
+      closeKanbanOverlay();
     }
   });
+
+  let kanbanOverlayContainer = null;
+
+  function getLhsRect() {
+    const channelSidebar = document.getElementById('sidebar-left') 
+                         || document.querySelector('.sidebar--left') 
+                         || document.getElementById('lhs-container')
+                         || document.querySelector('[class*="SidebarContainer"]')
+                         || document.querySelector('[class*="Lhs"]');
+    
+    if (channelSidebar) {
+      const rect = channelSidebar.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        return {
+          top: rect.top,
+          left: rect.right,
+          width: window.innerWidth - rect.right,
+          height: window.innerHeight - rect.top
+        };
+      }
+    }
+    
+    const teamSidebar = document.getElementById('team-sidebar-col') 
+                      || document.querySelector('.team-sidebar')
+                      || document.querySelector('[class*="TeamSidebar"]');
+    if (teamSidebar) {
+      const rect = teamSidebar.getBoundingClientRect();
+      if (rect.right > 0) {
+        return {
+          top: rect.top || 48,
+          left: rect.right + 240,
+          width: window.innerWidth - (rect.right + 240),
+          height: window.innerHeight - (rect.top || 48)
+        };
+      }
+    }
+    
+    return {
+      top: 48,
+      left: 290,
+      width: window.innerWidth - 290,
+      height: window.innerHeight - 48
+    };
+  }
+
+  async function syncKanbanOverlayWithCurrentChannel() {
+    const container = document.getElementById('chatops-kanban-overlay-container');
+    if (!container) return;
+    
+    const iframe = container.querySelector('iframe');
+    if (!iframe) return;
+
+    const channelInfo = await getCurrentChannelInfo();
+    if (channelInfo && channelInfo.id && channelInfo.team_id) {
+      await chrome.storage.local.set({
+        kanban_last_board: channelInfo.id,
+        kanban_last_team: channelInfo.team_id
+      });
+      
+      const newUrl = chrome.runtime.getURL(`kanban/index.html?teamId=${encodeURIComponent(channelInfo.team_id)}&channelId=${encodeURIComponent(channelInfo.id)}`);
+      if (iframe.src !== newUrl) {
+        iframe.src = newUrl;
+      }
+    }
+  }
+
+  const handleOverlayResize = () => {
+    const container = document.getElementById('chatops-kanban-overlay-container');
+    if (container) {
+      const rect = getLhsRect();
+      container.style.top = rect.top + 'px';
+      container.style.left = rect.left + 'px';
+      container.style.width = rect.width + 'px';
+      container.style.height = rect.height + 'px';
+    }
+  };
+
+  async function openKanbanOverlay() {
+    if (document.getElementById('chatops-kanban-overlay-container')) return;
+
+    // Create style for overlay fade animations if not exists
+    let overlayStyle = document.getElementById('chatops-kanban-overlay-styles');
+    if (!overlayStyle) {
+      overlayStyle = document.createElement('style');
+      overlayStyle.id = 'chatops-kanban-overlay-styles';
+      overlayStyle.textContent = `
+        @keyframes kb-overlay-fade-in {
+          from { opacity: 0; transform: scale(0.99); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes kb-overlay-fade-out {
+          from { opacity: 1; transform: scale(1); }
+          to { opacity: 0; transform: scale(0.99); }
+        }
+        .kb-overlay-active {
+          animation: kb-overlay-fade-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+        }
+        .kb-overlay-hiding {
+          animation: kb-overlay-fade-out 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+        }
+      `;
+      document.head.appendChild(overlayStyle);
+    }
+
+    const rect = getLhsRect();
+
+    kanbanOverlayContainer = document.createElement('div');
+    kanbanOverlayContainer.id = 'chatops-kanban-overlay-container';
+    kanbanOverlayContainer.className = 'kb-overlay-active';
+    kanbanOverlayContainer.style.cssText = `
+      position: fixed !important;
+      top: ${rect.top}px !important;
+      left: ${rect.left}px !important;
+      width: ${rect.width}px !important;
+      height: ${rect.height}px !important;
+      z-index: 1000000 !important;
+      background: #0d1117 !important;
+      border: none !important;
+      display: flex !important;
+      flex-direction: column !important;
+      box-sizing: border-box !important;
+      box-shadow: -4px 4px 24px rgba(0, 0, 0, 0.3) !important;
+      border-left: 1px solid var(--border, rgba(255,255,255,0.08)) !important;
+    `;
+
+    // Resolve current channel info to open the corresponding board directly
+    // getCurrentChannelInfo() returns { channel: { id, ... }, teamId }
+    const channelInfo = await getCurrentChannelInfo();
+    const channelId = channelInfo?.channel?.id;
+    const teamId = channelInfo?.teamId;
+
+    const iframe = document.createElement('iframe');
+
+    if (channelId && teamId) {
+      await chrome.storage.local.set({
+        kanban_last_board: channelId,
+        kanban_last_team: teamId
+      });
+      iframe.src = chrome.runtime.getURL(`kanban/index.html?teamId=${encodeURIComponent(teamId)}&channelId=${encodeURIComponent(channelId)}`);
+    } else {
+      // Fallback: Read current last board & team from local storage
+      chrome.storage.local.get(['kanban_last_board', 'kanban_last_team'], (res) => {
+        let url = chrome.runtime.getURL('kanban/index.html');
+        if (res.kanban_last_board && res.kanban_last_team) {
+          url += `?teamId=${encodeURIComponent(res.kanban_last_team)}&channelId=${encodeURIComponent(res.kanban_last_board)}`;
+        }
+        iframe.src = url;
+      });
+    }
+
+    iframe.style.cssText = `
+      width: 100% !important;
+      height: 100% !important;
+      border: none !important;
+      background: transparent !important;
+    `;
+
+    kanbanOverlayContainer.appendChild(iframe);
+    document.body.appendChild(kanbanOverlayContainer);
+
+    // Watch resize events to keep the left edge perfectly aligned with the sidebar
+    window.addEventListener('resize', handleOverlayResize);
+
+    // Hide the guide tooltip if visible to avoid overlapping
+    const guideTooltip = document.getElementById('chatops-kanban-guide-tooltip');
+    if (guideTooltip) {
+      guideTooltip.style.display = 'none';
+    }
+  }
+
+  function closeKanbanOverlay() {
+    const container = document.getElementById('chatops-kanban-overlay-container');
+    if (!container) return;
+
+    window.removeEventListener('resize', handleOverlayResize);
+
+    container.classList.remove('kb-overlay-active');
+    container.classList.add('kb-overlay-hiding');
+    setTimeout(() => {
+      container.remove();
+      kanbanOverlayContainer = null;
+      
+      // Restore guide tooltip display state if it wasn't permanently closed
+      chrome.storage.local.get('kanban_icon_guide_shown', (res) => {
+        if (!res.kanban_icon_guide_shown) {
+          const guideTooltip = document.getElementById('chatops-kanban-guide-tooltip');
+          if (guideTooltip) {
+            guideTooltip.style.display = 'block';
+          }
+        }
+      });
+    }, 150);
+  }
 
 
   /*

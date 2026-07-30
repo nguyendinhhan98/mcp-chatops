@@ -164,6 +164,7 @@ Communication giữa các components dùng `chrome.runtime.sendMessage()`. Toàn
 | `GET_MY_CHANNELS` | content | background | Lấy danh sách các public/private/DM channels theo team |
 | `CREATE_GOOGLE_MEET` | content | background | Yêu cầu background worker khởi tạo tab Google Meet mới và lắng nghe URL thật |
 | `GOOGLE_MEET_CREATED` | background | content | Trả về link Google Meet thật đã được tạo thành công để chèn vào chatbox |
+| `TOGGLE_KANBAN_OVERLAY` | background | content | Bật/Tắt chế độ hiển thị bảng Kanban đè lên (Overlay iframe) trang chính |
 
 ---
 
@@ -451,7 +452,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 
 ## 10. Phiên Bản & Cập Nhật
 
-- **Version**: 3.6.2 (trong `manifest.json` và `package.json`)
+- **Version**: 3.6.3 (trong `manifest.json` và `package.json`)
 - Khi bump version: cập nhật **cả hai** file.
 - Extension dùng **Manifest V3** — không dùng persistent background page, không dùng `chrome.extension.getBackgroundPage()`.
 

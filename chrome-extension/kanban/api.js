@@ -148,6 +148,10 @@ export async function getMyChannels(teamId) {
   return mmRequest(`/users/me/teams/${teamId}/channels`);
 }
 
+export async function getChannel(channelId) {
+  return mmRequest(`/channels/${channelId}`);
+}
+
 export async function getUsers(page = 0, perPage = 60, teamId = '') {
   const query = teamId ? `?in_team=${teamId}&page=${page}&per_page=${perPage}` : `?page=${page}&per_page=${perPage}`;
   return mmRequest(`/users${query}`);

@@ -4,7 +4,7 @@
  */
 
 import {
-  getConfig, getMyProfile, getMyTeams, getTeamByName, getMyChannels,
+  getConfig, getMyProfile, getMyTeams, getTeamByName, getMyChannels, getChannel,
   getKanbanBoardOverview, getUsersByIds,
   getPluginSettings, getKanbanLanes, getKanbanCardsDirect, updateCardLane,
   getKanbanBoardDetails, getUsersByUsernames, getUserAvatarUrlSync,
@@ -224,14 +224,32 @@ async function loadBoards() {
     // Resolve user details of the board creators
     await resolveBoardCreators();
 
+    // Parse URL channelId parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlChannelId = urlParams.get('channelId');
+
+    // If urlChannelId is provided but not in state.boards, query and add it dynamically (e.g. for DM/GM channels)
+    if (urlChannelId && !state.boards.find(b => b.id === urlChannelId)) {
+      try {
+        const ch = await getChannel(urlChannelId);
+        if (ch) {
+          let boardTitle = ch.display_name || ch.name || 'Hội thoại';
+          state.boards.push({
+            id: ch.id,
+            title: boardTitle,
+            name: ch.name,
+            creatorId: ch.creator_id
+          });
+        }
+      } catch (chErr) {
+        console.warn('[Kanban] Could not load current channel board dynamically:', chErr);
+      }
+    }
+
     if (!state.boards.length) {
       showNoBoardsState();
       return;
     }
-
-    // Parse URL channelId parameter
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlChannelId = urlParams.get('channelId');
 
     // Restore last used board from storage or URL parameter
     const { kanban_last_board: lastBoardId } = await chrome.storage.local.get('kanban_last_board');
@@ -495,6 +513,12 @@ function renderBoard() {
   const board = $('#kanbanBoard');
   if (!board) return;
 
+  // Update warning bar workspace and channel names
+  const warnWS = $('#warnWorkspaceName');
+  const warnCh = $('#warnChannelName');
+  if (warnWS) warnWS.textContent = state.currentTeam?.title || state.currentTeam?.name || '...';
+  if (warnCh) warnCh.textContent = state.currentBoard?.title || state.currentBoard?.name || '...';
+
   // Destroy old DnD engine
   if (state.dndEngine) {
     state.dndEngine.destroy();
@@ -616,7 +640,7 @@ function renderCard(card) {
       <div class="card-title">${escapeHtml(title)}</div>
       ${description ? `
         <div class="card-description" style="font-size:11px; color:var(--text-secondary); line-height:1.45; word-break:break-word; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; margin-top:2px;">
-          ${linkify(escapeHtml(description))}
+          ${linkify(description)}
         </div>
       ` : ''}
       <div class="card-footer">
@@ -630,7 +654,7 @@ function renderCard(card) {
         </div>
         <div class="card-assignees">
           ${assigneeIds.slice(0, 3).map(uid => renderAvatarSm(uid)).join('')}
-          ${assigneeIds.length > 3 ? `<div class="avatar-sm" style="background:var(--bg-card-hover);border:1.5px solid var(--border);font-size:9px;color:var(--text-muted);">+${assigneeIds.length - 3}</div>` : ''}
+          ${assigneeIds.length > 3 ? `<div class="avatar-sm" style="background:var(--bg-card-hover);border:1px solid var(--border);font-size:9px;color:var(--text-muted);">+${assigneeIds.length - 3}</div>` : ''}
         </div>
         <div class="card-actions">
           <button class="card-action-btn btn-open-card" data-card-id="${escapeHtml(cardId)}" title="Mở chi tiết">
@@ -1008,7 +1032,7 @@ function openCardModal(card = null, defaultLaneId = '') {
       </button>
 
       <div class="modal-header">
-        <span class="modal-status-badge lane-${lane?.color || 'propColorDefault'}" style="background:rgba(from var(--lane-${lane?.color || 'propColorDefault'}) r g b / 0.15);border:1px solid;border-color:color-mix(in srgb, var(--lane-${lane?.color || 'propColorDefault'}) 40%, transparent);color:var(--text-primary);">
+        <span class="modal-status-badge lane-${lane?.color || 'propColorDefault'}">
           ${escapeHtml(lane?.name || 'Chọn Lane')}
         </span>
       </div>
@@ -1016,7 +1040,7 @@ function openCardModal(card = null, defaultLaneId = '') {
         <div class="modal-main">
           <div class="modal-section">
             <div class="modal-section-label">Tiêu đề card</div>
-            <input type="text" id="modalTitleInput" value="${escapeHtml(title)}" placeholder="Nhập tiêu đề card..." style="width:100%; font-size:14px; font-weight:600; background:var(--bg-card); border:1.5px solid var(--border); border-radius:8px; padding:10px; color:var(--text-primary); margin-bottom:12px; outline:none;" />
+            <input type="text" id="modalTitleInput" value="${escapeHtml(title)}" placeholder="Nhập tiêu đề card..." style="width:100%; font-size:14px; font-weight:600; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:10px; color:var(--text-primary); margin-bottom:12px; outline:none;" />
           </div>
           <div class="modal-section desc-section" style="position:relative; flex:1; display:flex; flex-direction:column; margin-bottom:0;">
             <div class="modal-section-label" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
@@ -1025,11 +1049,10 @@ function openCardModal(card = null, defaultLaneId = '') {
                 <button id="btnEditDesc" class="header-btn" title="Sửa mô tả" style="padding:4px; font-size:11px; height:auto; display:inline-flex; align-items:center; justify-content:center;">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="stroke:currentColor;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
-                ${description ? `<button class="collapse-btn" id="btnExpandDesc" style="display:none;" title="Xem toàn bộ / Thu gọn"></button>` : ''}
               </div>
             </div>
             
-            <div id="modalDescDisplay" class="modal-description collapsed" style="background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:12px; font-size:13px; line-height:1.6; word-break:break-word; color:var(--text-primary);">${description ? parseMarkdown(description) : '<span class="empty" style="color:var(--text-muted);font-style:italic;">Chưa có mô tả chi tiết...</span>'}</div>
+            <div id="modalDescDisplay" class="modal-description" style="background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:12px; font-size:13px; line-height:1.6; word-break:break-word; color:var(--text-primary); max-height:280px; overflow-y:auto;">${description ? parseMarkdown(description) : '<span class="empty" style="color:var(--text-muted);font-style:italic;">Chưa có mô tả chi tiết...</span>'}</div>
             
             <div id="modalDescEditContainer" style="display:none; flex-direction:column; flex:1;">
               <div class="desc-format-toolbar">
@@ -1076,8 +1099,8 @@ function openCardModal(card = null, defaultLaneId = '') {
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="15" height="15" style="stroke:currentColor;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                 </button>
               </div>
-              <textarea id="modalDescInput" style="width:100%; flex:1; min-height:180px; background:var(--bg-card); border:1.5px solid var(--border); border-top:none; border-radius:0 0 8px 8px; padding:10px; color:var(--text-primary); font-size:13px; line-height:1.6; resize:none; outline:none; box-sizing:border-box;" placeholder="Nhập mô tả chi tiết...">${escapeHtml(description)}</textarea>
-              <div id="modalDescPreviewDiv" class="modal-description" style="display:none; width:100%; flex:1; min-height:180px; background:var(--bg-card); border:1.5px solid var(--border); border-top:none; border-radius:0 0 8px 8px; padding:12px; box-sizing:border-box; overflow-y:auto; word-break:break-word;"></div>
+              <textarea id="modalDescInput" style="width:100%; flex:1; min-height:180px; background:var(--bg-card); border:1px solid var(--border); border-top:none; border-radius:0 0 8px 8px; padding:10px; color:var(--text-primary); font-size:13px; line-height:1.6; resize:none; outline:none; box-sizing:border-box;" placeholder="Nhập mô tả chi tiết...">${escapeHtml(description)}</textarea>
+              <div id="modalDescPreviewDiv" class="modal-description" style="display:none; width:100%; flex:1; min-height:180px; background:var(--bg-card); border:1px solid var(--border); border-top:none; border-radius:0 0 8px 8px; padding:12px; box-sizing:border-box; overflow-y:auto; word-break:break-word;"></div>
             </div>
 
             <div id="descEditActions" style="display:none; gap:8px; margin-top:8px; justify-content:flex-end;">
@@ -1087,9 +1110,17 @@ function openCardModal(card = null, defaultLaneId = '') {
           </div>
         </div>
         <div class="modal-sidebar">
+          <div class="modal-field" style="margin-bottom:16px; padding:10px; background:rgba(218, 153, 34, 0.06); border:1px solid rgba(218, 153, 34, 0.15); border-radius:8px;">
+            <div style="font-size:11px; font-weight:600; color:#e2a52b; text-transform:uppercase; letter-spacing:0.8px; margin-bottom:4px;">Nơi lưu trữ (Đồng bộ ChatOps)</div>
+            <div style="font-size:12px; color:var(--text-primary); line-height:1.4;">
+              Workspace: <strong style="color:var(--text-primary);">${escapeHtml(state.currentTeam?.title || state.currentTeam?.name || '')}</strong><br/>
+              Kênh: <strong style="color:var(--text-primary);">${escapeHtml(state.currentBoard?.title || state.currentBoard?.name || '')}</strong>
+            </div>
+          </div>
+
           <div class="modal-field">
             <div class="modal-field-label">Trạng thái (Lane)</div>
-            <select id="modalLaneSelect" style="width:100%; background:var(--bg-card); border:1.5px solid var(--border); border-radius:8px; padding:8px; color:var(--text-primary); font-size:13px; outline:none;">
+            <select id="modalLaneSelect" style="width:100%; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:8px; color:var(--text-primary); font-size:13px; outline:none;">
               ${state.lanes.map(l => `<option value="${escapeHtml(l.id)}" ${l.id === laneId ? 'selected' : ''}>${escapeHtml(l.name)}</option>`).join('')}
             </select>
           </div>
@@ -1097,7 +1128,7 @@ function openCardModal(card = null, defaultLaneId = '') {
           <div class="modal-field">
             <div class="modal-field-label">Người thực hiện (Assignees)</div>
             <div class="assignee-picker-wrapper" style="position:relative;">
-              <div class="assignee-search-input-box" style="display:flex; align-items:center; background:var(--bg-card); border:1.5px solid var(--border); border-radius:8px; padding:6px 10px; gap:8px;">
+              <div class="assignee-search-input-box" style="display:flex; align-items:center; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:6px 10px; gap:8px;">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px; height:14px; color:var(--text-muted);"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 <input type="text" id="modalAssigneeSearch" placeholder="Tìm thành viên..." style="background:transparent; border:none; color:var(--text-primary); font-size:13px; width:100%; outline:none; font-family:inherit;" autocomplete="off" />
               </div>
@@ -1113,7 +1144,7 @@ function openCardModal(card = null, defaultLaneId = '') {
 
           <div class="modal-field">
             <div class="modal-field-label">Ngày hết hạn</div>
-            <input type="date" id="modalDueDateInput" value="${dueDate ? dueDate.substring(0, 10) : ''}" style="width:100%; background:var(--bg-card); border:1.5px solid var(--border); border-radius:8px; padding:8px; color:var(--text-primary); font-size:13px; outline:none;" />
+            <input type="date" id="modalDueDateInput" value="${dueDate ? dueDate.substring(0, 10) : ''}" style="width:100%; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:8px; color:var(--text-primary); font-size:13px; outline:none;" />
           </div>
 
           ${createdAt ? `
@@ -1450,14 +1481,7 @@ function openCardModal(card = null, defaultLaneId = '') {
   const btnEditDesc = overlay.querySelector('#btnEditDesc');
   const btnExpandDesc = overlay.querySelector('#btnExpandDesc');
 
-  // Description expand/collapse toggle
-  if (btnExpandDesc && descDisplay) {
-    btnExpandDesc.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const isCollapsed = descDisplay.classList.toggle('collapsed');
-      btnExpandDesc.classList.toggle('expanded', !isCollapsed);
-    });
-  }
+
 
   const descEditActions = overlay.querySelector('#descEditActions');
   const btnCancelDescEdit = overlay.querySelector('#btnCancelDescEdit');
@@ -1481,7 +1505,6 @@ function openCardModal(card = null, defaultLaneId = '') {
 
     const enterEditMode = () => {
       descDisplay.style.display = 'none';
-      if (btnExpandDesc) btnExpandDesc.style.display = 'none';
       btnEditDesc.style.display = 'none';
       descEditContainer.style.display = 'flex';
       descEditActions.style.display = 'flex';
@@ -1491,17 +1514,7 @@ function openCardModal(card = null, defaultLaneId = '') {
     const exitEditMode = (saveChanges = false) => {
       if (saveChanges) {
         const val = descInput.value.trim();
-        descDisplay.innerHTML = val ? linkify(escapeHtml(val)) : '<span class="empty" style="color:var(--text-muted);font-style:italic;">Chưa có mô tả chi tiết...</span>';
-        
-        setTimeout(() => {
-          if (val && descDisplay.scrollHeight > descDisplay.clientHeight + 10) {
-            if (btnExpandDesc) btnExpandDesc.style.display = 'inline-flex';
-            descDisplay.classList.add('collapsed');
-          } else {
-            if (btnExpandDesc) btnExpandDesc.style.display = 'none';
-            descDisplay.classList.remove('collapsed');
-          }
-        }, 100);
+        descDisplay.innerHTML = val ? parseMarkdown(val) : '<span class="empty" style="color:var(--text-muted);font-style:italic;">Chưa có mô tả chi tiết...</span>';
       } else {
         descInput.value = description;
       }
@@ -1510,18 +1523,6 @@ function openCardModal(card = null, defaultLaneId = '') {
       descEditContainer.style.display = 'none';
       descEditActions.style.display = 'none';
       btnEditDesc.style.display = 'inline-flex';
-      
-      if (!saveChanges) {
-        setTimeout(() => {
-          if (description && descDisplay.scrollHeight > descDisplay.clientHeight + 10) {
-            if (btnExpandDesc) btnExpandDesc.style.display = 'inline-flex';
-            descDisplay.classList.add('collapsed');
-          } else {
-            if (btnExpandDesc) btnExpandDesc.style.display = 'none';
-            descDisplay.classList.remove('collapsed');
-          }
-        }, 100);
-      }
     };
 
     btnEditDesc.addEventListener('click', enterEditMode);
@@ -1640,17 +1641,7 @@ function openCardModal(card = null, defaultLaneId = '') {
     });
   }
 
-  // Check if description overflows dynamically
-  if (descDisplay && btnExpandDesc && description) {
-    setTimeout(() => {
-      // scrollHeight is the full height, clientHeight is the visible height (capped by CSS max-height)
-      if (descDisplay.scrollHeight > descDisplay.clientHeight + 10) {
-        btnExpandDesc.style.display = 'inline-flex';
-      } else {
-        descDisplay.classList.remove('collapsed');
-      }
-    }, 100);
-  }
+
 
   // Delete card click handler
   if (isEdit) {
@@ -1793,7 +1784,7 @@ function showPromptDialog(title, placeholder, onConfirm) {
   overlay.innerHTML = `
     <div class="confirm-dialog">
       <h3>${escapeHtml(title)}</h3>
-      <input type="text" id="promptInput" placeholder="${escapeHtml(placeholder)}" style="width:100%; background:var(--bg-card); border:1.5px solid var(--border); border-radius:8px; padding:10px; color:var(--text-primary); margin-top:12px; margin-bottom:12px; outline:none;" />
+      <input type="text" id="promptInput" placeholder="${escapeHtml(placeholder)}" style="width:100%; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:10px; color:var(--text-primary); margin-top:12px; margin-bottom:12px; outline:none;" />
       <div class="confirm-dialog-actions">
         <button class="header-btn" id="promptCancel">Hủy</button>
         <button class="header-btn primary" id="promptOk">Thêm</button>
@@ -1973,6 +1964,12 @@ async function handleLaneAction(laneId, action) {
       }
     }
   } else if (action === 'delete') {
+    const laneCards = state.cards.filter(c => (c.laneId || c.lane_id) === laneId);
+    if (laneCards.length > 0) {
+      showToast('Không thể xóa cột đang có card. Vui lòng di chuyển hoặc xóa hết các card trước.', 'warning');
+      return;
+    }
+
     showConfirmDialog('Xóa cột này?', 'Cột này sẽ bị xóa khỏi Board vĩnh viễn. Hành động này không thể hoàn tác.', async () => {
       try {
         showToast('Đang xóa cột...', 'info');
@@ -2231,15 +2228,7 @@ function setupRefresh() {
 // ─── User Avatar ──────────────────────────────────────────────────────────────
 
 function renderUserAvatar() {
-  const el = $('#userAvatar');
-  if (!el || !state.profile) return;
-  const initials = getInitials((state.profile.first_name || '') + ' ' + (state.profile.last_name || '') || state.profile.username);
-  const avatarUrl = getUserAvatarUrlSync(state.profile.id);
-  el.title = state.profile.username || '';
-  el.innerHTML = `
-    <img src="${avatarUrl}" alt="${escapeHtml(initials)}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-    <span style="display:none; width:100%; height:100%; align-items:center; justify-content:center;">${escapeHtml(initials)}</span>
-  `;
+  // Removed per user request
 }
 
 // ─── Keyboard Shortcuts ───────────────────────────────────────────────────────
@@ -2478,6 +2467,31 @@ async function setupHeaderActions() {
     rateBtn.addEventListener('click', () => {
       const url = `https://chromewebstore.google.com/detail/chatops++/mmemhnbgmhfaognbfjhienigmmephjgm/reviews?hl=vi&authuser=0`;
       window.open(url, '_blank');
+    });
+  }
+
+  // 3. Close Button (Overlay Mode)
+  const isIframe = window.self !== window.top;
+  if (isIframe) {
+    const closeBtn = $('#btnHeaderClose');
+    if (closeBtn) {
+      closeBtn.style.display = 'inline-flex';
+      closeBtn.addEventListener('click', () => {
+        window.parent.postMessage({ type: 'CLOSE_KANBAN_OVERLAY' }, '*');
+      });
+    }
+
+    // Add Escape key handler to close the overlay if no modals are open
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const cardModal = $('#cardModal');
+        const confirmOverlay = $('#confirmOverlay');
+        const donateModal = $('#donateModal');
+        const hasOpenModal = cardModal || confirmOverlay || (donateModal && donateModal.style.display === 'flex');
+        if (!hasOpenModal) {
+          window.parent.postMessage({ type: 'CLOSE_KANBAN_OVERLAY' }, '*');
+        }
+      }
     });
   }
 }

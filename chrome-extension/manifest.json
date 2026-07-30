@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ChatOps++",
-  "version": "3.6.2",
+  "version": "3.6.3",
   "description": "ChatOps++ là tiện ích mở rộng toàn diện giúp tăng 1000% hiệu suất làm việc cho người dùng ChatOps.",
   "permissions": [
     "storage",
@@ -76,7 +76,8 @@
         "src/utils/webpToGif.js",
         "src/utils/imageConverter.js",
         "sidepanel/*",
-        "sidepanel/tabs/*"
+        "sidepanel/tabs/*",
+        "kanban/*"
       ],
       "matches": [
         "https://chat.runsystem.vn/*"
